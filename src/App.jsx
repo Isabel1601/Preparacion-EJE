@@ -83,14 +83,55 @@ function mapUsers(userRows = []) {
   }));
 }
 
+function mapProgress(progressRows = []) {
+  return (progressRows || []).map((p) => ({
+    id: p.id,
+    userId: p.user_id,
+    blockId: p.block_id,
+    completed: !!p.completed,
+    completedAt: p.completed_at || "",
+    createdAt: p.created_at || "",
+    updatedAt: p.updated_at || "",
+  }));
+}
+
+async function loadProgress() {
+  try {
+    const rows = await sbFetch("route_progress?select=*&order=updated_at.desc");
+    return mapProgress(rows);
+  } catch (e) {
+    console.warn("loadProgress Supabase:", e);
+    return [];
+  }
+}
+
+async function saveBlockProgress(userId, blockId, completed = true) {
+  const now = new Date().toISOString();
+  const row = {
+    id: `${userId}_${blockId}`,
+    user_id: userId,
+    block_id: blockId,
+    completed,
+    completed_at: completed ? now : null,
+    updated_at: now,
+  };
+  const saved = await sbFetch("route_progress?on_conflict=user_id,block_id", {
+    method: "POST",
+    headers: { Prefer: "resolution=merge-duplicates,return=representation" },
+    body: JSON.stringify(row),
+  });
+  return mapProgress(saved)[0] || mapProgress([row])[0];
+}
+
 /* ===== Carga: arma el objeto 'data' leyendo las 4 tablas ===== */
 async function loadData() {
   try {
-    const [configRows, routeRows, exRows, userRows] = await Promise.all([
+    const [configRows, routeRows, exRows, userRows, progress] = await Promise.all([
       sbFetch("config?id=eq.main&select=data"),
       sbFetch("route?id=eq.main&select=data"),
       sbFetch("exercises?select=id,data&order=created_at.asc"),
       sbFetch("users?select=*&order=created_at.asc"),
+      loadProgress(),
     ]);
     const config = (configRows && configRows[0] && configRows[0].data) || {};
     const route = (routeRows && routeRows[0] && routeRows[0].data) || emptyRoute();
@@ -103,6 +144,7 @@ async function loadData() {
       route,
       exercises,
       users,
+      progress,
     };
   } catch (e) {
     console.error("loadData Supabase:", e);
@@ -204,7 +246,7 @@ async function saveData(next, prev) {
   await Promise.all(jobs);
   return next;
 }
-const emptyData = () => ({ pin: null, aliases: {}, exercises: [], excluded: [], route: emptyRoute(), users: [] });
+const emptyData = () => ({ pin: null, aliases: {}, exercises: [], excluded: [], route: emptyRoute(), users: [], progress: [] });
 const emptyRoute = () => ({ title: "Ruta de Preparación", blocks: [] });
 /* Un bloque de la ruta formativa:
    { id, title, subtitle, pptUrl, resources: [ { id, type: 'game'|'video', label, url, slide } ] }
@@ -661,6 +703,62 @@ function buildConsolidated(exercises, aliases, excluded) {
   const arr = [...map.values()];
   arr.sort((a, b) => b.points - a.points || b.score - a.score || b.correct - a.correct);
   return arr.map((s, i) => ({ ...s, rank: i + 1 }));
+}
+function activeRouteBlocks(route) {
+  return (route?.blocks || []).filter((b) => !b.locked);
+}
+function completedBlockSet(progress, userId) {
+  return new Set((progress || []).filter((p) => p.userId === userId && p.completed).map((p) => p.blockId));
+}
+function blockCompleted(progress, userId, blockId) {
+  return completedBlockSet(progress, userId).has(blockId);
+}
+function routeProgressStats(route, progress, userId) {
+  const blocks = activeRouteBlocks(route);
+  const done = completedBlockSet(progress, userId);
+  const completed = blocks.filter((b) => done.has(b.id)).length;
+  return { completed, total: blocks.length, percent: pct(completed, blocks.length) };
+}
+function profileComplete(user) {
+  return !!(user?.name && user?.birthdate && user?.retreatDate && user?.expectations);
+}
+function dashboardRows(data) {
+  const users = data.users || [];
+  const route = data.route || emptyRoute();
+  const consolidated = buildConsolidated(data.exercises || [], data.aliases || {}, data.excluded || []);
+  return users.map((u) => {
+    const stats = u.linkedCanon ? consolidated.find((s) => norm(s.canon) === norm(u.linkedCanon)) : null;
+    const routeStats = routeProgressStats(route, data.progress || [], u.id);
+    const complete = profileComplete(u);
+    const issues = [];
+    if (!complete) issues.push("Perfil incompleto");
+    if (!u.linkedCanon) issues.push("Sin vínculo al podio");
+    if (routeStats.total > 0 && routeStats.completed === 0) issues.push("Sin avance en ruta");
+    else if (routeStats.total > 0 && routeStats.percent < 50) issues.push("Avance bajo");
+    if (u.linkedCanon && (!stats || stats.played === 0)) issues.push("Sin resultados");
+    return {
+      user: u,
+      profileComplete: complete,
+      route: routeStats,
+      stats,
+      issues,
+      status: issues.length ? issues.join(" · ") : "Al día",
+    };
+  });
+}
+function routeBlockStats(data) {
+  const users = data.users || [];
+  const progress = data.progress || [];
+  return activeRouteBlocks(data.route || emptyRoute()).map((b, idx) => {
+    const completed = users.filter((u) => blockCompleted(progress, u.id, b.id)).length;
+    return {
+      id: b.id,
+      title: b.title || `Bloque ${idx + 1}`,
+      completed,
+      total: users.length,
+      percent: pct(completed, users.length),
+    };
+  });
 }
 function questionStats(ex) {
   return (ex.questions || []).map((q, qi) => {
@@ -1210,6 +1308,159 @@ function UsersAdmin({ data, persist, busy }) {
   );
 }
 
+/* ================= Admin: dashboard de aprendizaje ================= */
+function AdminDashboard({ data }) {
+  const rows = useMemo(() => dashboardRows(data), [data]);
+  const blocks = useMemo(() => routeBlockStats(data), [data]);
+  const alerts = rows.filter((r) => r.issues.length);
+  const registered = rows.length;
+  const completeProfiles = rows.filter((r) => r.profileComplete).length;
+  const linked = rows.filter((r) => r.user.linkedCanon).length;
+  const withResults = rows.filter((r) => r.stats?.played > 0).length;
+  const avgRoute = registered ? Math.round(rows.reduce((s, r) => s + r.route.percent, 0) / registered) : 0;
+  const resultTotals = rows.reduce((acc, r) => {
+    if (r.stats?.total) {
+      acc.correct += r.stats.correct;
+      acc.total += r.stats.total;
+    }
+    return acc;
+  }, { correct: 0, total: 0 });
+  const avgAccuracy = pct(resultTotals.correct, resultTotals.total);
+
+  const exportDashboard = () => {
+    const exportRows = rows.map((r) => ({
+      Nombre: r.user.name,
+      "Perfil completo": r.profileComplete ? "Si" : "No",
+      "Vinculo podio": r.user.linkedCanon || "",
+      "Bloques completados": `${r.route.completed}/${r.route.total}`,
+      "Avance ruta %": r.route.percent,
+      "Juegos con resultados": r.stats?.played || 0,
+      "Aciertos": r.stats ? `${r.stats.correct}/${r.stats.total}` : "",
+      "Puntos campeonato": r.stats?.points || 0,
+      Estado: r.status,
+    }));
+    const wb = XLSX.utils.book_new();
+    const ws = XLSX.utils.json_to_sheet(exportRows);
+    XLSX.utils.book_append_sheet(wb, ws, "Dashboard");
+    XLSX.writeFile(wb, `dashboard-eje-${new Date().toISOString().slice(0, 10)}.xlsx`);
+  };
+
+  return (
+    <div className="admin-dash">
+      <div className="dash-hero card">
+        <div>
+          <div className="dash-eyebrow">Vista de acompañamiento</div>
+          <div className="dash-title">Dashboard de aprendizaje</div>
+          <div className="dim">Monitorea registro, avance de ruta, resultados y personas que necesitan seguimiento.</div>
+        </div>
+        <button className="btn btn--gold btn--sm" onClick={exportDashboard} disabled={!rows.length}>Exportar Excel</button>
+      </div>
+
+      <div className="dash-kpis">
+        <div className="card dash-kpi"><span>{registered}</span><b>Registrados</b><small>Perfiles creados</small></div>
+        <div className="card dash-kpi"><span>{pct(completeProfiles, registered)}%</span><b>Perfil completo</b><small>{completeProfiles}/{registered} usuarios</small></div>
+        <div className="card dash-kpi"><span>{pct(linked, registered)}%</span><b>Vinculados</b><small>{linked}/{registered} al podio</small></div>
+        <div className="card dash-kpi"><span>{avgRoute}%</span><b>Avance ruta</b><small>Promedio general</small></div>
+        <div className="card dash-kpi"><span>{withResults}</span><b>Con resultados</b><small>Participaron en juegos</small></div>
+        <div className="card dash-kpi"><span>{avgAccuracy}%</span><b>Aciertos</b><small>Promedio acumulado</small></div>
+      </div>
+
+      <div className="dash-grid">
+        <div className="card dash-panel">
+          <div className="dash-panel-head">
+            <div>
+              <div className="dash-panel-title">Alertas de seguimiento</div>
+              <div className="dim">Prioriza a quién acompañar primero.</div>
+            </div>
+            <span className="dash-count">{alerts.length}</span>
+          </div>
+          {alerts.length === 0 ? (
+            <div className="empty empty--compact">No hay alertas por ahora.</div>
+          ) : (
+            <div className="dash-alerts">
+              {alerts.slice(0, 8).map((r) => (
+                <div className="dash-alert" key={r.user.id}>
+                  <span className="avatar avatar--xs">{initials(r.user.name)}</span>
+                  <div>
+                    <b>{r.user.name}</b>
+                    <small>{r.status}</small>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <div className="card dash-panel">
+          <div className="dash-panel-head">
+            <div>
+              <div className="dash-panel-title">Avance por bloque</div>
+              <div className="dim">Bloques activos, sin contar bloqueados.</div>
+            </div>
+          </div>
+          {blocks.length === 0 ? (
+            <div className="empty empty--compact">Aún no hay bloques activos.</div>
+          ) : (
+            <div className="block-stat-list">
+              {blocks.map((b) => (
+                <div className="block-stat" key={b.id}>
+                  <div className="block-stat-head">
+                    <b>{b.title}</b>
+                    <span>{b.completed}/{b.total} · {b.percent}%</span>
+                  </div>
+                  <span className="mini-bar mini-bar--wide"><i style={{ width: `${b.percent}%` }} /></span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+
+      <div className="card dash-panel dash-panel--wide">
+        <div className="dash-panel-head">
+          <div>
+            <div className="dash-panel-title">Acompañamiento por participante</div>
+            <div className="dim">Estado general de ruta, resultados y perfil.</div>
+          </div>
+        </div>
+        {rows.length === 0 ? (
+          <div className="empty empty--compact">Aún no hay usuarios registrados.</div>
+        ) : (
+          <div className="dash-table-wrap">
+            <table className="dash-table">
+              <thead>
+                <tr>
+                  <th>Participante</th>
+                  <th>Ruta</th>
+                  <th>Juegos</th>
+                  <th>Aciertos</th>
+                  <th>Estado</th>
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((r) => (
+                  <tr key={r.user.id}>
+                    <td>
+                      <span className="cell-person">
+                        <span className="avatar avatar--xs">{initials(r.user.name)}</span>
+                        <b>{r.user.name}</b>
+                      </span>
+                    </td>
+                    <td>{r.route.completed}/{r.route.total} <span className="dim">({r.route.percent}%)</span></td>
+                    <td>{r.stats?.played || 0}</td>
+                    <td>{r.stats ? `${r.stats.correct}/${r.stats.total}` : "—"}</td>
+                    <td><span className={`status-pill ${r.issues.length ? "status-pill--warn" : "status-pill--ok"}`}>{r.status}</span></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 /* ================= Editor de Ruta Formativa (admin) ================= */
 function RouteEditor({ data, persist, busy }) {
   const route = data.route || emptyRoute();
@@ -1531,7 +1782,7 @@ function ExerciseEditor({ exercise, data, persist, busy, onClose }) {
 
 /* ================= Panel de administración ================= */
 function AdminPanel({ data, setData, onExit }) {
-  const [tab, setTab] = useState("subir");
+  const [tab, setTab] = useState("dashboard");
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState(null);
   const [parsed, setParsed] = useState(null);
@@ -1740,12 +1991,14 @@ function AdminPanel({ data, setData, onExit }) {
       </div>
 
       <div className="tabs">
-        {[["ruta", "🏟️ Ruta Formativa"], ["subir", "⬆ Subir resultados"], ["ejercicios", `📋 Ejercicios (${data.exercises.length})`], ["usuarios", `👥 Usuarios (${(data.users || []).length})`], ["participantes", "🏃 Participantes"], ["alias", "👤 Nombres y alias"], ["pin", "🔒 PIN"]].map(([k, t]) => (
+        {[["dashboard", "📊 Dashboard"], ["ruta", "🏟️ Ruta Formativa"], ["subir", "⬆ Subir resultados"], ["ejercicios", `📋 Ejercicios (${data.exercises.length})`], ["usuarios", `👥 Usuarios (${(data.users || []).length})`], ["participantes", "🏃 Participantes"], ["alias", "👤 Nombres y alias"], ["pin", "🔒 PIN"]].map(([k, t]) => (
           <button key={k} className={`tab ${tab === k ? "tab--on" : ""}`} onClick={() => setTab(k)}>{t}</button>
         ))}
       </div>
 
       {msg && <div className={`toast ${msg.ok ? "toast--ok" : "toast--err"}`}>{msg.t}</div>}
+
+      {tab === "dashboard" && <AdminDashboard data={data} />}
 
       {tab === "ruta" && <RouteEditor data={data} persist={persist} busy={busy} />}
 
@@ -2083,10 +2336,11 @@ function ResourceButton({ r, onOpen }) {
   );
 }
 
-function RouteField({ route, muted }) {
+function RouteField({ route, muted, sessionUser, progress, onToggleBlockProgress, progressBusy }) {
   const [viewer, setViewer] = useState(null); // {type,url,label}
   const [openBlock, setOpenBlock] = useState(null);
   const blocks = route?.blocks || [];
+  const routeStats = routeProgressStats(route, progress, sessionUser?.id);
 
   if (!blocks.length) {
     return (
@@ -2107,6 +2361,14 @@ function RouteField({ route, muted }) {
         </div>
       </div>
 
+      <div className="route-progress">
+        <div className="route-progress-head">
+          <span>Tu avance</span>
+          <b>{routeStats.completed}/{routeStats.total} bloques · {routeStats.percent}%</b>
+        </div>
+        <span className="route-progress-bar"><i style={{ width: `${routeStats.percent}%` }} /></span>
+      </div>
+
       <div className="pitch-path">
         <div className="path-line" aria-hidden />
         {blocks.map((b, i) => {
@@ -2114,10 +2376,11 @@ function RouteField({ route, muted }) {
           const side = i % 2 === 0 ? "left" : "right";
           const resCount = (b.resources || []).length;
           const locked = !!b.locked;
+          const done = !locked && blockCompleted(progress, sessionUser?.id, b.id);
           return (
-            <div key={b.id} className={`station station--${side} ${isLast ? "station--goal" : ""} ${locked ? "station--locked" : ""}`}>
+            <div key={b.id} className={`station station--${side} ${isLast ? "station--goal" : ""} ${locked ? "station--locked" : ""} ${done ? "station--done" : ""}`}>
               <div className="station-node">
-                <span className="station-num">{locked ? "🔒" : isLast ? "🥅" : i + 1}</span>
+                <span className="station-num">{locked ? "🔒" : done ? "✓" : isLast ? "🥅" : i + 1}</span>
               </div>
               <button
                 className="station-card"
@@ -2135,7 +2398,7 @@ function RouteField({ route, muted }) {
                 </div>
                 <div className="station-title">{b.title || `Bloque ${i + 1}`}</div>
                 {b.subtitle && !locked ? <div className="station-desc">{b.subtitle}</div> : null}
-                <span className="station-cta">{locked ? "Disponible pronto 🔒" : "Abrir bloque →"}</span>
+                <span className="station-cta">{locked ? "Disponible pronto 🔒" : done ? "Completado ✓" : "Abrir bloque →"}</span>
               </button>
             </div>
           );
@@ -2147,7 +2410,14 @@ function RouteField({ route, muted }) {
       </div>
 
       {openBlock && (
-        <BlockModal block={openBlock} onClose={() => setOpenBlock(null)} onOpenResource={(r) => setViewer(r)} />
+        <BlockModal
+          block={openBlock}
+          isCompleted={blockCompleted(progress, sessionUser?.id, openBlock.id)}
+          progressBusy={progressBusy}
+          onToggleComplete={(completed) => onToggleBlockProgress(openBlock.id, completed)}
+          onClose={() => setOpenBlock(null)}
+          onOpenResource={(r) => setViewer(r)}
+        />
       )}
       {viewer && <ContentViewer resource={viewer} onClose={() => setViewer(null)} />}
     </div>
@@ -2180,7 +2450,7 @@ function PptFrame({ embedUrl, originalUrl }) {
   );
 }
 
-function BlockModal({ block, onClose, onOpenResource }) {
+function BlockModal({ block, isCompleted, progressBusy, onToggleComplete, onClose, onOpenResource }) {
   const games = (block.resources || []).filter((r) => r.type === "game");
   const videos = (block.resources || []).filter((r) => r.type === "video");
   const pptEmbed = toEmbedUrl(block.pptUrl);
@@ -2201,6 +2471,24 @@ function BlockModal({ block, onClose, onOpenResource }) {
         ) : (
           <div className="ppt-empty">Este bloque no tiene presentación asignada.</div>
         )}
+
+        <div className={`block-progress-card ${isCompleted ? "block-progress-card--done" : ""}`}>
+          <div>
+            <div className="block-progress-title">{isCompleted ? "Bloque completado" : "Avance del bloque"}</div>
+            <div className="dim" style={{ fontSize: 13 }}>
+              {isCompleted
+                ? "Este bloque ya cuenta en tu ruta formativa."
+                : "Cuando termines la presentacion y sus recursos, registra tu avance."}
+            </div>
+          </div>
+          <button
+            className={isCompleted ? "btn btn--ghost btn--sm" : "btn btn--teal btn--sm"}
+            onClick={() => onToggleComplete(!isCompleted)}
+            disabled={progressBusy}
+          >
+            {isCompleted ? "Marcar como pendiente" : "Marcar bloque como completado"}
+          </button>
+        </div>
 
         {games.length > 0 && (
           <div className="res-group">
@@ -2384,6 +2672,7 @@ function AuthScreen({ data, setData, onLogin }) {
 /* Panel del perfil (lo que ve el participante logueado) */
 function ProfileCard({ user, data, onClose, onLogout }) {
   const age = ageFromBirth(user.birthdate);
+  const myRoute = routeProgressStats(data.route, data.progress, user.id);
   const myStats = useMemo(() => {
     if (!user.linkedCanon) return null;
     const cons = buildConsolidated(data.exercises, data.aliases, data.excluded);
@@ -2416,6 +2705,14 @@ function ProfileCard({ user, data, onClose, onLogout }) {
           </div>
         )}
 
+        <div className="profile-route">
+          <div className="profile-route-head">
+            <span>Ruta formativa</span>
+            <b>{myRoute.completed}/{myRoute.total} bloques · {myRoute.percent}%</b>
+          </div>
+          <span className="route-progress-bar"><i style={{ width: `${myRoute.percent}%` }} /></span>
+        </div>
+
         <div className="profile-field"><span className="pf-l">🎂 Nacimiento</span><span className="pf-v">{fmtDate(user.birthdate)}</span></div>
         <div className="profile-field"><span className="pf-l">⛪ Vivió su EJE</span><span className="pf-v">{user.retreatDate || "—"}</span></div>
         {user.expectations && (
@@ -2443,6 +2740,7 @@ export default function App() {
   const [muted, setMuted] = useState(false);
   const [sessionUserId, setSessionUserId] = useState(null);
   const [showProfile, setShowProfile] = useState(false);
+  const [progressBusy, setProgressBusy] = useState(false);
 
   const sessionUser = data?.users?.find((u) => u.id === sessionUserId) || null;
 
@@ -2496,6 +2794,24 @@ export default function App() {
     const d = await loadAuthData();
     if (d) setData(d);
   }, []);
+
+  const handleToggleBlockProgress = useCallback(async (blockId, completed) => {
+    if (!sessionUserId) return;
+    setProgressBusy(true);
+    try {
+      const saved = await saveBlockProgress(sessionUserId, blockId, completed);
+      setData((prev) => {
+        if (!prev) return prev;
+        const rest = (prev.progress || []).filter((p) => !(p.userId === sessionUserId && p.blockId === blockId));
+        return { ...prev, progress: [...rest, saved] };
+      });
+    } catch (e) {
+      console.error("saveBlockProgress:", e);
+      window.alert("No se pudo guardar el avance. Revisa que la tabla route_progress exista en Supabase.");
+    } finally {
+      setProgressBusy(false);
+    }
+  }, [sessionUserId]);
 
   if (loading)
     return (
@@ -2585,7 +2901,16 @@ export default function App() {
             </button>
           </div>
 
-          {mode === "ruta" && <RouteField route={data.route || emptyRoute()} muted={muted} />}
+          {mode === "ruta" && (
+            <RouteField
+              route={data.route || emptyRoute()}
+              muted={muted}
+              sessionUser={sessionUser}
+              progress={data.progress || []}
+              progressBusy={progressBusy}
+              onToggleBlockProgress={handleToggleBlockProgress}
+            />
+          )}
 
           {mode === "podio" && (
             <>
@@ -3187,6 +3512,7 @@ button:focus-visible,.inp:focus-visible{outline:2px solid var(--turf);outline-of
 .pstat-l{font-size:10px;color:var(--dim);font-family:var(--mono);text-transform:uppercase;letter-spacing:.5px}
 .profile-nolink{background:#FFC5310f;border:1px solid #FFC53133;border-radius:12px;padding:13px 15px;
   font-size:13px;line-height:1.5;margin-bottom:18px}
+.profile-route{background:var(--bg0);border:1px solid var(--line);border-radius:12px;padding:12px 14px;margin-bottom:14px}
 .profile-field{display:flex;justify-content:space-between;gap:12px;padding:11px 0;border-bottom:1px solid #26355F55}
 .pf-l{color:var(--dim);font-size:13px}
 .pf-v{font-weight:700;font-size:14px;text-align:right}
@@ -3207,6 +3533,39 @@ button:focus-visible,.inp:focus-visible{outline:2px solid var(--turf);outline-of
 .user-expect{margin-top:10px}
 .link-row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
 
+/* ---------- Dashboard admin ---------- */
+.admin-dash{display:grid;gap:16px}
+.dash-hero{display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;border-color:var(--line2)}
+.dash-eyebrow{font-family:var(--mono);font-size:10px;font-weight:700;letter-spacing:1.5px;color:var(--turf);text-transform:uppercase}
+.dash-title{font-family:var(--disp);font-style:italic;text-transform:uppercase;font-size:28px;line-height:1.1;margin:3px 0}
+.dash-kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(135px,1fr));gap:9px}
+.dash-kpi{min-height:116px;display:flex;flex-direction:column;justify-content:center;gap:2px}
+.dash-kpi span{font-family:var(--disp);font-style:italic;font-size:34px;line-height:1;color:var(--gold2)}
+.dash-kpi b{font-size:13px}
+.dash-kpi small{color:var(--dim);font-size:11px}
+.dash-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.dash-panel{display:grid;gap:12px}
+.dash-panel-head{display:flex;justify-content:space-between;align-items:flex-start;gap:12px}
+.dash-panel-title{font-weight:900;font-size:16px}
+.dash-count{font-family:var(--disp);font-style:italic;color:var(--hot2);font-size:30px;line-height:1}
+.dash-alerts{display:grid;gap:8px}
+.dash-alert{display:flex;align-items:center;gap:10px;background:var(--bg0);border:1px solid var(--line);border-radius:11px;padding:10px 12px}
+.dash-alert small{display:block;color:var(--dim);font-size:12px}
+.block-stat-list{display:grid;gap:11px}
+.block-stat{display:grid;gap:6px}
+.block-stat-head{display:flex;justify-content:space-between;gap:10px;font-size:13px}
+.block-stat-head span{color:var(--dim);font-family:var(--mono);white-space:nowrap}
+.mini-bar--wide{width:100%;height:8px}
+.dash-table-wrap{overflow:auto}
+.dash-table{width:100%;border-collapse:collapse;font-size:13.5px}
+.dash-table th{text-align:left;color:var(--dim);font-family:var(--mono);font-size:10px;letter-spacing:1px;text-transform:uppercase;padding:9px 10px;border-bottom:1px solid var(--line)}
+.dash-table td{padding:11px 10px;border-bottom:1px solid #26355F66;vertical-align:middle}
+.dash-table tr:hover td{background:#ffffff05}
+.status-pill{display:inline-flex;max-width:300px;border-radius:999px;padding:4px 9px;font-size:11px;font-weight:800;line-height:1.2}
+.status-pill--ok{background:#16DB931a;color:var(--turf);border:1px solid #16DB9344}
+.status-pill--warn{background:#FFC53116;color:var(--gold2);border:1px solid #FFC53144}
+.empty--compact{padding:22px 12px}
+
 /* ---------- Switch de modo Ruta / Podio ---------- */
 .mode-switch{display:flex;gap:8px;justify-content:center;margin-bottom:22px;flex-wrap:wrap}
 .mode-btn{font-family:var(--body);font-weight:800;font-size:14px;border-radius:13px;padding:12px 22px;
@@ -3221,6 +3580,12 @@ button:focus-visible,.inp:focus-visible{outline:2px solid var(--turf);outline-of
 .route-kick{font-size:32px;animation:roll 5s linear infinite}
 .route-title{font-family:var(--disp);font-style:italic;font-size:30px;letter-spacing:.5px;text-transform:uppercase}
 .route-sub{color:var(--dim);font-size:13px;font-family:var(--mono)}
+.route-progress{max-width:520px;margin:0 auto 20px;background:linear-gradient(180deg,var(--card2),var(--card));
+  border:1px solid var(--line);border-radius:13px;padding:12px 14px}
+.route-progress-head,.profile-route-head{display:flex;justify-content:space-between;gap:12px;font-size:13px;color:var(--dim);margin-bottom:8px}
+.route-progress-head b,.profile-route-head b{color:var(--text);font-family:var(--mono);font-size:12px}
+.route-progress-bar{display:block;width:100%;height:9px;border-radius:999px;background:#05070F;border:1px solid var(--line);overflow:hidden}
+.route-progress-bar i{display:block;height:100%;border-radius:inherit;background:linear-gradient(90deg,var(--turf),var(--gold));transition:width .25s ease}
 
 .pitch-path{position:relative;padding:10px 0 40px;
   background:
@@ -3243,6 +3608,7 @@ button:focus-visible,.inp:focus-visible{outline:2px solid var(--turf);outline-of
   box-shadow:0 4px 16px #16DB9333, 0 0 0 6px #0a2e1e;z-index:3}
 .station--goal .station-node{border-color:var(--gold);color:var(--gold2);font-size:22px;
   box-shadow:0 4px 20px #FFC53144, 0 0 0 6px #0a2e1e}
+.station--done .station-node{border-color:var(--turf);color:#03251A;background:linear-gradient(180deg,#7EF7C9,var(--turf))}
 .station-num{line-height:1}
 .station-card{flex:1;text-align:inherit;background:linear-gradient(180deg,var(--card2),var(--card));
   border:1px solid var(--line2);border-radius:14px;padding:13px 16px;cursor:pointer;transition:var(--tr);
@@ -3250,6 +3616,7 @@ button:focus-visible,.inp:focus-visible{outline:2px solid var(--turf);outline-of
 .station-card:hover{transform:translateY(-2px);border-color:var(--turf);box-shadow:0 10px 30px #00000055}
 .station--goal .station-card{border-color:#FFC53166;background:linear-gradient(180deg,#231d0e,#141020)}
 .station--goal .station-card:hover{border-color:var(--gold)}
+.station--done .station-card{border-color:#16DB9388;box-shadow:0 0 0 1px #16DB9322 inset}
 .station-head{display:flex;align-items:center;gap:8px;justify-content:space-between}
 .station--right .station-head{flex-direction:row-reverse}
 .station-tag{font-family:var(--mono);font-size:9px;font-weight:700;letter-spacing:1.5px;color:var(--turf)}
@@ -3282,6 +3649,10 @@ button:focus-visible,.inp:focus-visible{outline:2px solid var(--turf);outline-of
 .viewer-fallback .btn{margin-top:6px}
 .ppt-empty{background:var(--bg0);border:1px dashed var(--line2);border-radius:12px;padding:24px;
   text-align:center;color:var(--dim);font-size:13px;margin-bottom:16px}
+.block-progress-card{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;
+  background:var(--bg0);border:1px solid var(--line);border-radius:12px;padding:13px 15px;margin:0 0 16px}
+.block-progress-card--done{border-color:#16DB9366;background:#16DB930f}
+.block-progress-title{font-weight:900;font-size:14px}
 .res-group{margin-top:14px}
 .res-group-title{font-family:var(--mono);font-size:11px;font-weight:700;letter-spacing:1.5px;color:var(--dim);
   text-transform:uppercase;margin-bottom:9px}
@@ -3372,6 +3743,10 @@ button:focus-visible,.inp:focus-visible{outline:2px solid var(--turf);outline-of
   .ht-line{-webkit-text-stroke:0}
   .logo-svg{width:min(360px,90vw)}
   .upload-grid{grid-template-columns:1fr}
+  .dash-kpis{grid-template-columns:repeat(2,1fr)}
+  .dash-grid{grid-template-columns:1fr}
+  .dash-title{font-size:24px}
+  .dash-table{min-width:720px}
   .station{width:88%}
   .res-edit{flex-wrap:wrap}
   .inp--sm{min-width:120px}
