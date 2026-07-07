@@ -54,6 +54,8 @@ async function sbUpload(file) {
 
 /* ================= Utilidades ================= */
 const norm = (s) => String(s || "").trim().toLowerCase().replace(/\s+/g, " ");
+const phraseKey = (s) => norm(s).normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+const ACCESS_PHRASE_KEY = "firmes en la fe sobre la roca";
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
 const pct = (c, t) => (t ? Math.round((c / t) * 100) : 0);
 const toInt = (v, d = 0) => {
@@ -69,6 +71,18 @@ const initials = (name) =>
     .join("")
     .toUpperCase();
 
+function mapUsers(userRows = []) {
+  return (userRows || []).map((u) => ({
+    id: u.id,
+    name: u.name,
+    passHash: u.pass_hash,
+    birthdate: u.birthdate || "",
+    retreatDate: u.retreat_date || "",
+    expectations: u.expectations || "",
+    linkedCanon: u.linked_canon || "",
+  }));
+}
+
 /* ===== Carga: arma el objeto 'data' leyendo las 4 tablas ===== */
 async function loadData() {
   try {
@@ -81,15 +95,7 @@ async function loadData() {
     const config = (configRows && configRows[0] && configRows[0].data) || {};
     const route = (routeRows && routeRows[0] && routeRows[0].data) || emptyRoute();
     const exercises = (exRows || []).map((r) => ({ id: r.id, ...r.data }));
-    const users = (userRows || []).map((u) => ({
-      id: u.id,
-      name: u.name,
-      passHash: u.pass_hash,
-      birthdate: u.birthdate || "",
-      retreatDate: u.retreat_date || "",
-      expectations: u.expectations || "",
-      linkedCanon: u.linked_canon || "",
-    }));
+    const users = mapUsers(userRows);
     return {
       pin: config.pin ?? null,
       aliases: config.aliases || {},
@@ -100,6 +106,26 @@ async function loadData() {
     };
   } catch (e) {
     console.error("loadData Supabase:", e);
+    return null;
+  }
+}
+
+async function loadAuthData() {
+  try {
+    const [configRows, userRows] = await Promise.all([
+      sbFetch("config?id=eq.main&select=data"),
+      sbFetch("users?select=*&order=created_at.asc"),
+    ]);
+    const config = (configRows && configRows[0] && configRows[0].data) || {};
+    return {
+      ...emptyData(),
+      pin: config.pin ?? null,
+      aliases: config.aliases || {},
+      excluded: config.excluded || [],
+      users: mapUsers(userRows),
+    };
+  } catch (e) {
+    console.error("loadAuthData Supabase:", e);
     return null;
   }
 }
@@ -2236,7 +2262,7 @@ function ContentViewer({ resource, onClose }) {
 }
 
 /* ================= Autenticación de participantes ================= */
-function AuthScreen({ data, setData, onLogin, onSkip }) {
+function AuthScreen({ data, setData, onLogin }) {
   const [tab, setTab] = useState("login"); // login | register
   const users = data.users || [];
 
@@ -2252,6 +2278,7 @@ function AuthScreen({ data, setData, onLogin, onSkip }) {
   const [rBirth, setRBirth] = useState("");
   const [rRetreat, setRRetreat] = useState("");
   const [rExpect, setRExpect] = useState("");
+  const [rPhrase, setRPhrase] = useState("");
   const [rErr, setRErr] = useState(null);
   const [busy, setBusy] = useState(false);
 
@@ -2269,6 +2296,7 @@ function AuthScreen({ data, setData, onLogin, onSkip }) {
     if (users.some((x) => norm(x.name) === norm(rName))) { setRErr("Ya existe alguien con ese nombre. Si eres tú, inicia sesión."); return; }
     if (rPass.length < 4) { setRErr("La clave debe tener al menos 4 caracteres."); return; }
     if (rPass !== rPass2) { setRErr("Las claves no coinciden."); return; }
+    if (phraseKey(rPhrase) !== ACCESS_PHRASE_KEY) { setRErr("La frase de acceso no coincide."); return; }
     setBusy(true);
     const u = {
       id: uid(),
@@ -2326,6 +2354,10 @@ function AuthScreen({ data, setData, onLogin, onSkip }) {
             <label className="lbl" style={{ marginTop: 10 }}>¿Qué expectativas tienes sobre el retiro?</label>
             <textarea className="inp" rows={3} value={rExpect} onChange={(e) => setRExpect(e.target.value)} placeholder="Cuéntanos qué esperas de esta experiencia…" />
 
+            <label className="lbl" style={{ marginTop: 10 }}>Frase de acceso *</label>
+            <input className="inp" value={rPhrase} onChange={(e) => setRPhrase(e.target.value)} placeholder="Escribela como la recibiste" />
+            <div className="auth-hint">No importan mayusculas, minusculas ni tildes.</div>
+
             <div className="auth-grid" style={{ marginTop: 10 }}>
               <div>
                 <label className="lbl">Crea una clave *</label>
@@ -2345,7 +2377,6 @@ function AuthScreen({ data, setData, onLogin, onSkip }) {
           </div>
         )}
       </div>
-      <button className="btn btn--ghost btn--sm auth-skip" onClick={onSkip}>Explorar sin iniciar sesión →</button>
     </div>
   );
 }
@@ -2411,14 +2442,13 @@ export default function App() {
   const [studentModal, setStudentModal] = useState(null);
   const [muted, setMuted] = useState(false);
   const [sessionUserId, setSessionUserId] = useState(null);
-  const [showAuth, setShowAuth] = useState(false);
   const [showProfile, setShowProfile] = useState(false);
 
   const sessionUser = data?.users?.find((u) => u.id === sessionUserId) || null;
 
   useEffect(() => {
     (async () => {
-      const d = await loadData();
+      const d = await loadAuthData();
       setData(d || emptyData());
       setLoading(false);
     })();
@@ -2435,6 +2465,38 @@ export default function App() {
     return currentEx ? rankExercise(currentEx, data.aliases, data.excluded) : [];
   }, [data, sel, currentEx]);
 
+  const handleLogin = useCallback(async (uid) => {
+    setSessionUserId(uid);
+    setLoading(true);
+    const d = await loadData();
+    if (d) setData(d);
+    setLoading(false);
+  }, []);
+
+  const handleAdminOk = useCallback(async () => {
+    setLoading(true);
+    const d = await loadData();
+    if (d) setData(d);
+    setView("admin");
+    setLoading(false);
+  }, []);
+
+  const handleAdminExit = useCallback(async () => {
+    setView("public");
+    if (!sessionUserId) {
+      const d = await loadAuthData();
+      if (d) setData(d);
+    }
+  }, [sessionUserId]);
+
+  const handleLogout = useCallback(async () => {
+    setSessionUserId(null);
+    setShowProfile(false);
+    setMode("ruta");
+    const d = await loadAuthData();
+    if (d) setData(d);
+  }, []);
+
   if (loading)
     return (
       <Shell>
@@ -2445,26 +2507,14 @@ export default function App() {
   if (view === "pin")
     return (
       <Shell>
-        <PinGate data={data} setData={setData} onOk={() => setView("admin")} onCancel={() => setView("public")} />
+        <PinGate data={data} setData={setData} onOk={handleAdminOk} onCancel={() => setView("public")} />
       </Shell>
     );
 
   if (view === "admin")
     return (
       <Shell>
-        <AdminPanel data={data} setData={setData} onExit={() => setView("public")} />
-      </Shell>
-    );
-
-  if (showAuth)
-    return (
-      <Shell>
-        <AuthScreen
-          data={data}
-          setData={setData}
-          onLogin={(uid) => { setSessionUserId(uid); setShowAuth(false); }}
-          onSkip={() => setShowAuth(false)}
-        />
+        <AdminPanel data={data} setData={setData} onExit={handleAdminExit} />
       </Shell>
     );
 
@@ -2518,69 +2568,79 @@ export default function App() {
             <span className="user-chip-badge">Mi perfil</span>
           </button>
         ) : (
-          <button className="user-chip user-chip--login" onClick={() => setShowAuth(true)}>
-            👤 Iniciar sesión / Crear perfil
-          </button>
+          <span className="user-chip user-chip--login">
+            Cuenta requerida
+          </span>
         )}
       </div>
 
-      <div className="mode-switch">
-        <button className={`mode-btn ${mode === "ruta" ? "mode-btn--on" : ""}`} onClick={() => setMode("ruta")}>
-          🏟️ Ruta Formativa
-        </button>
-        <button className={`mode-btn ${mode === "podio" ? "mode-btn--on" : ""}`} onClick={() => setMode("podio")}>
-          🏆 Podio y Resultados
-        </button>
-      </div>
-
-      {mode === "ruta" && <RouteField route={data.route || emptyRoute()} muted={muted} />}
-
-      {mode === "podio" && (
+      {sessionUser ? (
         <>
-          <nav className="chipbar">
-            <button className={`chip chip--gold ${consolidated ? "chip--on" : ""}`} onClick={() => setSel("consolidado")}>
-              🏆 Consolidado
+          <div className="mode-switch">
+            <button className={`mode-btn ${mode === "ruta" ? "mode-btn--on" : ""}`} onClick={() => setMode("ruta")}>
+              🏟️ Ruta Formativa
             </button>
-            {data.exercises.map((ex) => (
-              <button key={ex.id} className={`chip ${sel === ex.id ? "chip--on" : ""}`} onClick={() => setSel(ex.id)}>
-                {ex.title}
-              </button>
-            ))}
-          </nav>
+            <button className={`mode-btn ${mode === "podio" ? "mode-btn--on" : ""}`} onClick={() => setMode("podio")}>
+              🏆 Podio y Resultados
+            </button>
+          </div>
 
-          {data.exercises.length === 0 ? (
-            <div className="empty" style={{ padding: "70px 20px" }}>
-              <div style={{ fontSize: 42 }}>🏟️</div>
-              <div style={{ marginTop: 10 }}>Aún no hay resultados cargados.<br />Entra al panel de administración para subir el primer ejercicio.</div>
-            </div>
-          ) : (
+          {mode === "ruta" && <RouteField route={data.route || emptyRoute()} muted={muted} />}
+
+          {mode === "podio" && (
             <>
-              <div className="seg seg--center">
-                {[["podio", "Podio"], ["tabla", "Tabla completa"], ...(currentEx && (currentEx.questions || []).length ? [["preguntas", "Por pregunta"]] : [])].map(([k, t]) => (
-                  <button key={k} className={`seg-btn ${section === k ? "seg-btn--on" : ""}`} onClick={() => setSection(k)}>{t}</button>
+              <nav className="chipbar">
+                <button className={`chip chip--gold ${consolidated ? "chip--on" : ""}`} onClick={() => setSel("consolidado")}>
+                  🏆 Consolidado
+                </button>
+                {data.exercises.map((ex) => (
+                  <button key={ex.id} className={`chip ${sel === ex.id ? "chip--on" : ""}`} onClick={() => setSel(ex.id)}>
+                    {ex.title}
+                  </button>
                 ))}
-              </div>
+              </nav>
 
-              {(consolidated || (currentEx && hasScores(currentEx))) && <ScoringInfo />}
+              {data.exercises.length === 0 ? (
+                <div className="empty" style={{ padding: "70px 20px" }}>
+                  <div style={{ fontSize: 42 }}>🏟️</div>
+                  <div style={{ marginTop: 10 }}>Aún no hay resultados cargados.<br />Entra al panel de administración para subir el primer ejercicio.</div>
+                </div>
+              ) : (
+                <>
+                  <div className="seg seg--center">
+                    {[["podio", "Podio"], ["tabla", "Tabla completa"], ...(currentEx && (currentEx.questions || []).length ? [["preguntas", "Por pregunta"]] : [])].map(([k, t]) => (
+                      <button key={k} className={`seg-btn ${section === k ? "seg-btn--on" : ""}`} onClick={() => setSection(k)}>{t}</button>
+                    ))}
+                  </div>
 
-              {section === "podio" && (
-                <PodiumStage
-                  ranked={ranked}
-                  consolidated={consolidated}
-                  muted={muted}
-                  setMuted={setMuted}
-                  subtitle={
-                    consolidated
-                      ? "Clasificación general · puntos de campeonato"
-                      : `"${currentEx.title}"${currentEx.sortBy === "correct" ? " · orden por aciertos" : hasScores(currentEx) ? " · aciertos (desempate por puntaje Wordwall)" : " · orden por aciertos"}`
-                  }
-                />
+                  {(consolidated || (currentEx && hasScores(currentEx))) && <ScoringInfo />}
+
+                  {section === "podio" && (
+                    <PodiumStage
+                      ranked={ranked}
+                      consolidated={consolidated}
+                      muted={muted}
+                      setMuted={setMuted}
+                      subtitle={
+                        consolidated
+                          ? "Clasificación general · puntos de campeonato"
+                          : `"${currentEx.title}"${currentEx.sortBy === "correct" ? " · orden por aciertos" : hasScores(currentEx) ? " · aciertos (desempate por puntaje Wordwall)" : " · orden por aciertos"}`
+                      }
+                    />
+                  )}
+                  {section === "tabla" && <FullTable rows={ranked} consolidated={consolidated} withScores={currentEx ? hasScores(currentEx) : false} onStudent={setStudentModal} />}
+                  {section === "preguntas" && currentEx && <StatsQuestions ex={currentEx} />}
+                </>
               )}
-              {section === "tabla" && <FullTable rows={ranked} consolidated={consolidated} withScores={currentEx ? hasScores(currentEx) : false} onStudent={setStudentModal} />}
-              {section === "preguntas" && currentEx && <StatsQuestions ex={currentEx} />}
             </>
           )}
         </>
+      ) : (
+        <AuthScreen
+          data={data}
+          setData={setData}
+          onLogin={handleLogin}
+        />
       )}
 
       {studentModal && <StudentModal canon={studentModal} data={data} onClose={() => setStudentModal(null)} />}
@@ -2589,12 +2649,12 @@ export default function App() {
           user={sessionUser}
           data={data}
           onClose={() => setShowProfile(false)}
-          onLogout={() => { setSessionUserId(null); setShowProfile(false); }}
+          onLogout={handleLogout}
         />
       )}
 
       <footer className="foot">
-        <button className="btn btn--ghost btn--sm" onClick={async () => { const d = await loadData(); if (d) setData(d); }}>↻ Actualizar datos</button>
+        <button className="btn btn--ghost btn--sm" onClick={async () => { const d = sessionUser ? await loadData() : await loadAuthData(); if (d) setData(d); }}>↻ Actualizar datos</button>
         <button className="btn btn--ghost btn--sm" onClick={() => setView("pin")}>⚙ Administración</button>
       </footer>
     </Shell>
@@ -3117,7 +3177,7 @@ button:focus-visible,.inp:focus-visible{outline:2px solid var(--turf);outline-of
   border-radius:9px;padding:9px 12px}
 .auth-privacy{font-size:12px;color:var(--dim);background:var(--bg0);border:1px solid var(--line);
   border-radius:10px;padding:11px 13px;margin-top:14px;line-height:1.5}
-.auth-skip{display:block;margin:16px auto 0}
+.auth-hint{font-size:12px;color:var(--dim);margin-top:6px}
 
 /* ---------- Perfil del participante ---------- */
 .profile-stats{display:grid;grid-template-columns:repeat(4,1fr);gap:9px;margin-bottom:18px}
@@ -3186,7 +3246,7 @@ button:focus-visible,.inp:focus-visible{outline:2px solid var(--turf);outline-of
 .station-num{line-height:1}
 .station-card{flex:1;text-align:inherit;background:linear-gradient(180deg,var(--card2),var(--card));
   border:1px solid var(--line2);border-radius:14px;padding:13px 16px;cursor:pointer;transition:var(--tr);
-  display:flex;flex-direction:column;gap:3px}
+  display:flex;flex-direction:column;gap:3px;color:var(--text)}
 .station-card:hover{transform:translateY(-2px);border-color:var(--turf);box-shadow:0 10px 30px #00000055}
 .station--goal .station-card{border-color:#FFC53166;background:linear-gradient(180deg,#231d0e,#141020)}
 .station--goal .station-card:hover{border-color:var(--gold)}
@@ -3195,7 +3255,7 @@ button:focus-visible,.inp:focus-visible{outline:2px solid var(--turf);outline-of
 .station-tag{font-family:var(--mono);font-size:9px;font-weight:700;letter-spacing:1.5px;color:var(--turf)}
 .station--goal .station-tag{color:var(--gold2)}
 .station-meta{font-size:11px;color:var(--dim);font-family:var(--mono)}
-.station-title{font-family:var(--disp);font-style:italic;font-size:19px;letter-spacing:.3px;line-height:1.1;text-transform:uppercase}
+.station-title{font-family:var(--disp);font-style:italic;font-size:19px;letter-spacing:.3px;line-height:1.1;text-transform:uppercase;color:var(--text)}
 .station-desc{color:var(--dim);font-size:13px;line-height:1.4}
 .station-cta{color:var(--turf);font-size:12px;font-weight:700;margin-top:3px}
 .station--goal .station-cta{color:var(--gold2)}
