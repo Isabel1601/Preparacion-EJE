@@ -102,12 +102,33 @@ function mapProgress(progressRows = []) {
   }));
 }
 
+function mapAttendance(attendanceRows = []) {
+  return (attendanceRows || []).map((a) => ({
+    id: a.id,
+    userId: a.user_id,
+    blockId: a.block_id,
+    attended: !!a.attended,
+    createdAt: a.created_at || "",
+    updatedAt: a.updated_at || "",
+  }));
+}
+
 async function loadProgress() {
   try {
     const rows = await sbFetch("route_progress?select=*&order=updated_at.desc");
     return mapProgress(rows);
   } catch (e) {
     console.warn("loadProgress Supabase:", e);
+    return [];
+  }
+}
+
+async function loadAttendance() {
+  try {
+    const rows = await sbFetch("session_attendance?select=*&order=updated_at.desc");
+    return mapAttendance(rows);
+  } catch (e) {
+    console.warn("loadAttendance Supabase:", e);
     return [];
   }
 }
@@ -142,15 +163,33 @@ async function saveRouteProgress(userId, blockId, patch = {}) {
   return mapProgress(saved)[0] || mapProgress([row])[0];
 }
 
+async function saveSessionAttendance(userId, blockId, attended = true) {
+  const now = new Date().toISOString();
+  const row = {
+    id: `${userId}_${blockId}`,
+    user_id: userId,
+    block_id: blockId,
+    attended: !!attended,
+    updated_at: now,
+  };
+  const saved = await sbFetch("session_attendance?on_conflict=user_id,block_id", {
+    method: "POST",
+    headers: { Prefer: "resolution=merge-duplicates,return=representation" },
+    body: JSON.stringify(row),
+  });
+  return mapAttendance(saved)[0] || mapAttendance([row])[0];
+}
+
 /* ===== Carga: arma el objeto 'data' leyendo las 4 tablas ===== */
 async function loadData() {
   try {
-    const [configRows, routeRows, exRows, userRows, progress] = await Promise.all([
+    const [configRows, routeRows, exRows, userRows, progress, attendance] = await Promise.all([
       sbFetch("config?id=eq.main&select=data"),
       sbFetch("route?id=eq.main&select=data"),
       sbFetch("exercises?select=id,data&order=created_at.asc"),
       sbFetch("users?select=*&order=created_at.asc"),
       loadProgress(),
+      loadAttendance(),
     ]);
     const config = (configRows && configRows[0] && configRows[0].data) || {};
     const route = (routeRows && routeRows[0] && routeRows[0].data) || emptyRoute();
@@ -164,6 +203,7 @@ async function loadData() {
       exercises,
       users,
       progress,
+      attendance,
     };
   } catch (e) {
     console.error("loadData Supabase:", e);
@@ -265,7 +305,7 @@ async function saveData(next, prev) {
   await Promise.all(jobs);
   return next;
 }
-const emptyData = () => ({ pin: null, aliases: {}, exercises: [], excluded: [], route: emptyRoute(), users: [], progress: [] });
+const emptyData = () => ({ pin: null, aliases: {}, exercises: [], excluded: [], route: emptyRoute(), users: [], progress: [], attendance: [] });
 const emptyRoute = () => ({ title: "Ruta de Preparación", blocks: [] });
 /* Un bloque de la ruta formativa:
    { id, title, subtitle, pptUrl, resources: [ { id, type: 'game'|'video', label, url, slide } ] }
@@ -787,7 +827,9 @@ function splitNames(textOrList) {
   if (Array.isArray(textOrList)) return textOrList.map((s) => String(s || "").trim()).filter(Boolean);
   return String(textOrList || "").split(/\r?\n|,/).map((s) => s.trim()).filter(Boolean);
 }
-function attendedBlock(block, user) {
+function attendedBlock(data, block, user) {
+  const row = (data?.attendance || []).find((a) => a.userId === user?.id && a.blockId === block?.id);
+  if (row) return !!row.attended;
   const names = splitNames(block?.attendance || block?.attendanceText);
   if (!user || !names.length) return false;
   const options = [user.name, user.linkedCanon].filter(Boolean).map(norm);
@@ -810,7 +852,7 @@ function gameRequirementStatus(resource, data, user) {
 }
 function blockLearningStatus(data, user, block) {
   const row = progressForBlock(data.progress || [], user?.id, block?.id);
-  const attended = attendedBlock(block, user);
+  const attended = attendedBlock(data, block, user);
   const hasAudio = !!block?.audioUrl;
   const audioOk = !hasAudio || attended || !!row?.audioCompleted || (row?.audioPercent || 0) >= AUDIO_COMPLETE_PCT;
   const games = (block?.resources || []).filter((r) => r.type === "game").map((r) => gameRequirementStatus(r, data, user));
@@ -1857,14 +1899,9 @@ function RouteEditor({ data, persist, busy }) {
           </div>
           <input className="inp" value={b.audioUrl || ""} onChange={(e) => setBlockField(bi, "audioUrl", e.target.value)} placeholder="Sube un audio o pega un link MP3/M4A" />
 
-          <label className="lbl" style={{ marginTop: 10 }}>Lista de asistencia presencial</label>
-          <textarea
-            className="inp inp--mono"
-            rows={3}
-            value={b.attendanceText ?? (Array.isArray(b.attendance) ? b.attendance.join("\n") : (b.attendance || ""))}
-            onChange={(e) => setBlockField(bi, "attendanceText", e.target.value)}
-            placeholder={"Pega un nombre por línea. Si asistió, no necesita escuchar el audio para aprobar este bloque."}
-          />
+          <div className="ok-inline" style={{ marginTop: 8 }}>
+            La asistencia de este bloque se marca desde la pestaña Asistencia.
+          </div>
 
           <div className="res-edit-groups">
             {(b.resources || []).length > 0 && (
@@ -2056,6 +2093,128 @@ function ExerciseEditor({ exercise, data, persist, busy, onClose }) {
   );
 }
 
+/* ================= Asistencia por bloque (admin) ================= */
+function AttendanceAdmin({ data, busy, onSave }) {
+  const blocks = data.route?.blocks || [];
+  const users = data.users || [];
+  const [blockId, setBlockId] = useState(blocks.find((b) => !b.locked)?.id || blocks[0]?.id || "");
+  const [query, setQuery] = useState("");
+  const [present, setPresent] = useState(new Set());
+
+  const block = blocks.find((b) => b.id === blockId) || blocks[0] || null;
+
+  useEffect(() => {
+    if (!block && blocks.length) setBlockId(blocks[0].id);
+  }, [block, blocks]);
+
+  useEffect(() => {
+    if (!block) {
+      setPresent(new Set());
+      return;
+    }
+    setPresent(new Set(users.filter((u) => attendedBlock(data, block, u)).map((u) => u.id)));
+  }, [blockId, data.attendance, data.users, data.route]);
+
+  const filteredUsers = useMemo(() => {
+    const q = norm(query);
+    if (!q) return users;
+    return users.filter((u) => norm(`${u.name} ${u.linkedCanon || ""}`).includes(q));
+  }, [users, query]);
+
+  const presentCount = present.size;
+  const visibleIds = filteredUsers.map((u) => u.id);
+  const allVisibleMarked = visibleIds.length > 0 && visibleIds.every((id) => present.has(id));
+
+  const toggle = (userId) => {
+    setPresent((prev) => {
+      const next = new Set(prev);
+      if (next.has(userId)) next.delete(userId);
+      else next.add(userId);
+      return next;
+    });
+  };
+
+  const markVisible = (attended) => {
+    setPresent((prev) => {
+      const next = new Set(prev);
+      visibleIds.forEach((id) => {
+        if (attended) next.add(id);
+        else next.delete(id);
+      });
+      return next;
+    });
+  };
+
+  if (!blocks.length) {
+    return <div className="empty">Crea primero bloques en la Ruta Formativa para registrar asistencia.</div>;
+  }
+
+  return (
+    <div className="attendance-admin">
+      <div className="card attendance-hero">
+        <div>
+          <div className="dash-eyebrow">Asistencia por sesión</div>
+          <div className="dash-title">Control por bloque</div>
+          <div className="dim">Marca quién asistió a cada bloque. Si asistió, el audio queda como repaso; los juegos siguen siendo obligatorios.</div>
+        </div>
+        <button className="btn btn--gold btn--sm" onClick={() => onSave(blockId, present)} disabled={busy || !block}>
+          Guardar asistencia
+        </button>
+      </div>
+
+      <div className="card attendance-tools">
+        <label className="filter-group">
+          <span>Bloque / sesión</span>
+          <select className="inp" value={blockId} onChange={(e) => setBlockId(e.target.value)}>
+            {blocks.map((b, idx) => (
+              <option key={b.id} value={b.id}>{idx + 1}. {b.title || `Bloque ${idx + 1}`}{b.locked ? " (bloqueado)" : ""}</option>
+            ))}
+          </select>
+        </label>
+        <label className="filter-group">
+          <span>Buscar participante</span>
+          <input className="inp" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Nombre o nombre vinculado al podio" />
+        </label>
+        <div className="attendance-actions">
+          <button className="btn btn--teal-o btn--sm" onClick={() => markVisible(!allVisibleMarked)}>
+            {allVisibleMarked ? "Quitar visibles" : "Marcar visibles"}
+          </button>
+          <button className="btn btn--ghost btn--sm" onClick={() => markVisible(false)}>Limpiar visibles</button>
+        </div>
+      </div>
+
+      <div className="attendance-summary">
+        <div className="card dash-kpi"><span>{presentCount}</span><b>Asistieron</b><small>{users.length} participantes registrados</small></div>
+        <div className="card dash-kpi"><span>{users.length ? users.length - presentCount : 0}</span><b>No marcados</b><small>Para este bloque</small></div>
+        <div className="card dash-kpi"><span>{filteredUsers.length}</span><b>Visibles</b><small>Según búsqueda actual</small></div>
+      </div>
+
+      <div className="card attendance-list">
+        {filteredUsers.length === 0 ? (
+          <div className="empty empty--compact">No hay participantes con esa búsqueda.</div>
+        ) : (
+          filteredUsers.map((u) => {
+            const checked = present.has(u.id);
+            return (
+              <button key={u.id} className={`attendance-row ${checked ? "attendance-row--on" : ""}`} onClick={() => toggle(u.id)}>
+                <span className="attendance-check">{checked ? "✓" : ""}</span>
+                <span className="avatar avatar--xs">{initials(u.name)}</span>
+                <span className="attendance-person">
+                  <b>{u.name}</b>
+                  <small>{u.linkedCanon ? `Podio: ${u.linkedCanon}` : "Sin vínculo al podio"}</small>
+                </span>
+                <span className={`mini-state ${checked ? "mini-state--present" : "mini-state--absent"}`}>
+                  {checked ? "Asistió" : "No marcado"}
+                </span>
+              </button>
+            );
+          })
+        )}
+      </div>
+    </div>
+  );
+}
+
 /* ================= Panel de administración ================= */
 function AdminPanel({ data, setData, onExit }) {
   const [tab, setTab] = useState("dashboard");
@@ -2086,6 +2245,27 @@ function AdminPanel({ data, setData, onExit }) {
     } catch (e) {
       setMsg({ ok: false, t: "No se pudo guardar. Revisa tu conexión e inténtalo de nuevo." });
       throw new Error("persist");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const saveAttendanceBlock = async (targetBlockId, presentIds) => {
+    if (!targetBlockId) return;
+    setBusy(true);
+    setMsg(null);
+    try {
+      const presentSet = new Set(presentIds);
+      const savedRows = await Promise.all((data.users || []).map((u) =>
+        saveSessionAttendance(u.id, targetBlockId, presentSet.has(u.id))
+      ));
+      const otherRows = (data.attendance || []).filter((a) => a.blockId !== targetBlockId);
+      const next = { ...data, attendance: [...otherRows, ...savedRows] };
+      setData(next);
+      const count = savedRows.filter((r) => r.attended).length;
+      setMsg({ ok: true, t: `Asistencia guardada: ${count} participante(s) marcado(s).` });
+    } catch (e) {
+      setMsg({ ok: false, t: "No se pudo guardar la asistencia. Revisa que la tabla session_attendance exista en Supabase." });
     } finally {
       setBusy(false);
     }
@@ -2267,7 +2447,7 @@ function AdminPanel({ data, setData, onExit }) {
       </div>
 
       <div className="tabs">
-        {[["dashboard", "📊 Dashboard"], ["ruta", "🏟️ Ruta Formativa"], ["subir", "⬆ Subir resultados"], ["ejercicios", `📋 Ejercicios (${data.exercises.length})`], ["usuarios", `👥 Usuarios (${(data.users || []).length})`], ["participantes", "🏃 Participantes"], ["alias", "👤 Nombres y alias"], ["pin", "🔒 PIN"]].map(([k, t]) => (
+        {[["dashboard", "📊 Dashboard"], ["ruta", "🏟️ Ruta Formativa"], ["asistencia", "✅ Asistencia"], ["subir", "⬆ Subir resultados"], ["ejercicios", `📋 Ejercicios (${data.exercises.length})`], ["usuarios", `👥 Usuarios (${(data.users || []).length})`], ["participantes", "🏃 Participantes"], ["alias", "👤 Nombres y alias"], ["pin", "🔒 PIN"]].map(([k, t]) => (
           <button key={k} className={`tab ${tab === k ? "tab--on" : ""}`} onClick={() => setTab(k)}>{t}</button>
         ))}
       </div>
@@ -2277,6 +2457,8 @@ function AdminPanel({ data, setData, onExit }) {
       {tab === "dashboard" && <AdminDashboard data={data} />}
 
       {tab === "ruta" && <RouteEditor data={data} persist={persist} busy={busy} />}
+
+      {tab === "asistencia" && <AttendanceAdmin data={data} busy={busy} onSave={saveAttendanceBlock} />}
 
       {tab === "subir" && (
         <div className="stack">
@@ -3957,6 +4139,25 @@ button:focus-visible,.inp:focus-visible{outline:2px solid var(--turf);outline-of
 .status-pill--warn{background:#FFC53116;color:var(--gold2);border:1px solid #FFC53144}
 .empty--compact{padding:22px 12px}
 
+/* ---------- Asistencia admin ---------- */
+.attendance-admin{display:grid;gap:16px}
+.attendance-hero{display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;border-color:var(--line2)}
+.attendance-tools{display:grid;grid-template-columns:minmax(220px,1.1fr) minmax(220px,1.4fr) auto;gap:12px;align-items:end}
+.attendance-actions{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end}
+.attendance-summary{display:grid;grid-template-columns:repeat(3,minmax(120px,1fr));gap:9px}
+.attendance-list{display:grid;gap:8px}
+.attendance-row{display:grid;grid-template-columns:28px 30px minmax(0,1fr) auto;align-items:center;gap:10px;width:100%;
+  text-align:left;color:var(--text);background:var(--bg0);border:1px solid var(--line);border-radius:12px;padding:10px 12px;
+  cursor:pointer;transition:var(--tr);font-family:var(--body)}
+.attendance-row:hover{border-color:var(--line2);transform:translateY(-1px)}
+.attendance-row--on{border-color:#16DB9366;background:#16DB930f}
+.attendance-check{width:24px;height:24px;border-radius:7px;border:1px solid var(--line2);display:flex;align-items:center;justify-content:center;
+  color:#03251A;background:#ffffff08;font-weight:900;line-height:1}
+.attendance-row--on .attendance-check{background:var(--turf);border-color:var(--turf)}
+.attendance-person{display:flex;flex-direction:column;gap:2px;min-width:0}
+.attendance-person b{font-size:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.attendance-person small{color:var(--dim);font-size:11.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
 /* ---------- Switch de modo Ruta / Podio ---------- */
 .mode-switch{display:flex;gap:8px;justify-content:center;margin-bottom:22px;flex-wrap:wrap}
 .mode-btn{font-family:var(--body);font-weight:800;font-size:14px;border-radius:13px;padding:12px 22px;
@@ -4149,6 +4350,11 @@ button:focus-visible,.inp:focus-visible{outline:2px solid var(--turf);outline-of
   .dash-grid{grid-template-columns:1fr}
   .dash-title{font-size:24px}
   .dash-table{min-width:720px}
+  .attendance-tools{grid-template-columns:1fr}
+  .attendance-actions{justify-content:flex-start}
+  .attendance-summary{grid-template-columns:1fr}
+  .attendance-row{grid-template-columns:28px 30px minmax(0,1fr)}
+  .attendance-row .mini-state{grid-column:3}
   .station{width:88%}
   .res-edit{flex-wrap:wrap}
   .inp--sm{min-width:120px}
