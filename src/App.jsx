@@ -4,6 +4,8 @@ import * as XLSX from "xlsx";
 /* ================= Config ================= */
 const PTS = [10, 8, 6, 5, 4];
 const PTS_PART = 2;
+const PASSING_PCT = 80;
+const AUDIO_COMPLETE_PCT = 85;
 const REDUCED =
   typeof window !== "undefined" &&
   window.matchMedia &&
@@ -58,6 +60,7 @@ const phraseKey = (s) => norm(s).normalize("NFD").replace(/[\u0300-\u036f]/g, ""
 const ACCESS_PHRASE_KEY = "firmes en la fe sobre la roca";
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
 const pct = (c, t) => (t ? Math.round((c / t) * 100) : 0);
+const hasMeaningfulAnswer = (s) => phraseKey(s).replace(/[^a-z0-9]/g, "").length >= 2;
 const toInt = (v, d = 0) => {
   const n = parseInt(v, 10);
   return Number.isFinite(n) ? n : d;
@@ -90,6 +93,10 @@ function mapProgress(progressRows = []) {
     blockId: p.block_id,
     completed: !!p.completed,
     completedAt: p.completed_at || "",
+    openedAt: p.opened_at || "",
+    audioPercent: toInt(p.audio_percent, 0),
+    audioCompleted: !!p.audio_completed,
+    audioCompletedAt: p.audio_completed_at || "",
     createdAt: p.created_at || "",
     updatedAt: p.updated_at || "",
   }));
@@ -106,15 +113,27 @@ async function loadProgress() {
 }
 
 async function saveBlockProgress(userId, blockId, completed = true) {
+  return saveRouteProgress(userId, blockId, { completed });
+}
+
+async function saveRouteProgress(userId, blockId, patch = {}) {
   const now = new Date().toISOString();
   const row = {
     id: `${userId}_${blockId}`,
     user_id: userId,
     block_id: blockId,
-    completed,
-    completed_at: completed ? now : null,
     updated_at: now,
   };
+  if ("completed" in patch) {
+    row.completed = !!patch.completed;
+    row.completed_at = patch.completed ? now : null;
+  }
+  if (patch.opened) row.opened_at = now;
+  if (patch.audioPercent != null) row.audio_percent = Math.max(0, Math.min(100, toInt(patch.audioPercent, 0)));
+  if (patch.audioCompleted != null) {
+    row.audio_completed = !!patch.audioCompleted;
+    if (patch.audioCompleted) row.audio_completed_at = now;
+  }
   const saved = await sbFetch("route_progress?on_conflict=user_id,block_id", {
     method: "POST",
     headers: { Prefer: "resolution=merge-duplicates,return=representation" },
@@ -556,13 +575,26 @@ function parseWorkbook(buf) {
     });
     i = j + 1;
   }
+  const first = new Map();
   const best = new Map();
+  const counts = new Map();
   for (const s of students) {
     const k = norm(s.raw);
+    if (!first.has(k)) first.set(k, s);
+    counts.set(k, (counts.get(k) || 0) + 1);
     const prev = best.get(k);
     if (isBetterAttempt(s, prev)) best.set(k, s);
   }
-  return { title, questions, students: [...best.values()] };
+  return {
+    title,
+    questions,
+    students: [...best.entries()].map(([k, s]) => ({
+      ...s,
+      firstAttempt: attemptSnapshot(first.get(k)),
+      bestAttempt: attemptSnapshot(s),
+      attemptCount: counts.get(k) || 1,
+    })),
+  };
 }
 
 /* ============ Parser del detallado pegado desde Wordwall ============ */
@@ -615,10 +647,25 @@ function mergeStudents(existing, incoming) {
       map.set(k, { ...s });
       added++;
     } else {
-      // conserva el mejor resultado: mayor puntaje, luego aciertos, luego más reciente
-      if (isBetterAttempt(s, prev)) {
-        map.set(k, { ...prev, ...s });
+      const firstAttempt = prev.firstAttempt || s.firstAttempt || attemptSnapshot(prev);
+      const attemptCount = Math.max(prev.attemptCount || 1, s.attemptCount || 1);
+      const better = isBetterAttempt(s, prev);
+      if (better) {
+        map.set(k, {
+          ...prev,
+          ...s,
+          firstAttempt,
+          bestAttempt: s.bestAttempt || attemptSnapshot(s),
+          attemptCount,
+        });
         updated++;
+      } else {
+        map.set(k, {
+          ...prev,
+          firstAttempt,
+          bestAttempt: prev.bestAttempt || attemptSnapshot(prev),
+          attemptCount,
+        });
       }
     }
   }
@@ -632,6 +679,25 @@ function mergeQuestions(existing, incoming) {
 }
 
 /* ============ Ranking y puntos de campeonato ============ */
+function attemptSnapshot(s) {
+  if (!s) return null;
+  return {
+    correct: s.correct ?? 0,
+    total: s.total ?? 0,
+    score: s.score ?? null,
+    submitted: s.submitted || null,
+    order: s.order ?? 0,
+    answers: s.answers || {},
+  };
+}
+function podiumAttempt(s) {
+  const a = s?.firstAttempt;
+  return a ? { ...s, ...a } : s;
+}
+function learningAttempt(s) {
+  const a = s?.bestAttempt;
+  return a ? { ...s, ...a } : s;
+}
 /* Decide si el intento 'b' es mejor que 'a' para conservar al fusionar/deduplicar.
    Prioriza: mayor puntaje Wordwall > más aciertos > intento más reciente. */
 function isBetterAttempt(b, a) {
@@ -667,7 +733,8 @@ function rankExercise(ex, aliases, excluded) {
     if (isExcluded(canon, excluded)) continue; // fuera del podio/ranking
     const prev = byCanon.get(canon);
     // conservar el mejor intento: mayor puntaje, luego aciertos, luego más reciente
-    if (isBetterAttempt(s, prev)) byCanon.set(canon, { ...s, canon });
+    const rankedAttempt = { ...podiumAttempt(s), canon, bestAttempt: s.bestAttempt, firstAttempt: s.firstAttempt, attemptCount: s.attemptCount };
+    if (!prev || isBetterAttempt(rankedAttempt, prev)) byCanon.set(canon, rankedAttempt);
   }
   const arr = [...byCanon.values()];
   // Regla de orden: SIEMPRE gana quien tiene más aciertos.
@@ -713,14 +780,67 @@ function completedBlockSet(progress, userId) {
 function blockCompleted(progress, userId, blockId) {
   return completedBlockSet(progress, userId).has(blockId);
 }
-function routeProgressStats(route, progress, userId) {
-  const blocks = activeRouteBlocks(route);
-  const done = completedBlockSet(progress, userId);
-  const completed = blocks.filter((b) => done.has(b.id)).length;
+function progressForBlock(progress, userId, blockId) {
+  return (progress || []).find((p) => p.userId === userId && p.blockId === blockId) || null;
+}
+function splitNames(textOrList) {
+  if (Array.isArray(textOrList)) return textOrList.map((s) => String(s || "").trim()).filter(Boolean);
+  return String(textOrList || "").split(/\r?\n|,/).map((s) => s.trim()).filter(Boolean);
+}
+function attendedBlock(block, user) {
+  const names = splitNames(block?.attendance || block?.attendanceText);
+  if (!user || !names.length) return false;
+  const options = [user.name, user.linkedCanon].filter(Boolean).map(norm);
+  return names.some((name) => options.includes(norm(name)));
+}
+function findUserStudent(ex, data, user) {
+  if (!ex || !user) return null;
+  const targets = [user.linkedCanon, user.name].filter(Boolean).map(norm);
+  return (ex.students || []).find((s) => targets.includes(norm(canonicalOf(s.raw, data.aliases || {})))) || null;
+}
+function gameRequirementStatus(resource, data, user) {
+  const passing = toInt(resource.passingPct, PASSING_PCT);
+  if (!resource.exerciseId) return { linked: false, required: false, passed: true, percent: null, passing, played: false };
+  const ex = (data.exercises || []).find((e) => e.id === resource.exerciseId);
+  const st = findUserStudent(ex, data, user);
+  if (!st) return { linked: true, required: true, passed: false, percent: null, passing, played: false, title: ex?.title || resource.label || "Juego" };
+  const best = learningAttempt(st);
+  const percent = pct(best.correct, best.total);
+  return { linked: true, required: true, passed: percent >= passing, percent, passing, played: true, title: ex?.title || resource.label || "Juego" };
+}
+function blockLearningStatus(data, user, block) {
+  const row = progressForBlock(data.progress || [], user?.id, block?.id);
+  const attended = attendedBlock(block, user);
+  const hasAudio = !!block?.audioUrl;
+  const audioOk = !hasAudio || attended || !!row?.audioCompleted || (row?.audioPercent || 0) >= AUDIO_COMPLETE_PCT;
+  const games = (block?.resources || []).filter((r) => r.type === "game").map((r) => gameRequirementStatus(r, data, user));
+  const requiredGames = games.filter((g) => g.required);
+  const gamesOk = requiredGames.every((g) => g.passed);
+  const requirementsMet = audioOk && gamesOk;
+  const completed = !!row?.completed && requirementsMet;
+  const missing = [];
+  if (!audioOk) missing.push("audio");
+  if (!gamesOk) missing.push("juego >=80%");
+  return { row, attended, hasAudio, audioOk, games, requiredGames, gamesOk, requirementsMet, completed, missing };
+}
+function routeProgressStats(data, user) {
+  const blocks = activeRouteBlocks(data?.route || emptyRoute());
+  const completed = blocks.filter((b) => blockLearningStatus(data, user, b).completed).length;
   return { completed, total: blocks.length, percent: pct(completed, blocks.length) };
 }
+function unlockedRouteBlocks(data, user) {
+  const blocks = data?.route?.blocks || [];
+  let priorComplete = true;
+  return blocks.map((b) => {
+    const adminLocked = !!b.locked;
+    const unlocked = priorComplete && !adminLocked;
+    const status = blockLearningStatus(data, user, b);
+    if (!adminLocked) priorComplete = priorComplete && status.completed;
+    return { block: b, unlocked, adminLocked, status };
+  });
+}
 function profileComplete(user) {
-  return !!(user?.name && user?.birthdate && user?.retreatDate && user?.expectations);
+  return !!(user?.name && user?.birthdate && hasMeaningfulAnswer(user?.retreatDate) && user?.expectations);
 }
 function dashboardRows(data) {
   const users = data.users || [];
@@ -728,7 +848,7 @@ function dashboardRows(data) {
   const consolidated = buildConsolidated(data.exercises || [], data.aliases || {}, data.excluded || []);
   return users.map((u) => {
     const stats = u.linkedCanon ? consolidated.find((s) => norm(s.canon) === norm(u.linkedCanon)) : null;
-    const routeStats = routeProgressStats(route, data.progress || [], u.id);
+    const routeStats = routeProgressStats(data, u);
     const complete = profileComplete(u);
     const issues = [];
     if (!complete) issues.push("Perfil incompleto");
@@ -748,9 +868,8 @@ function dashboardRows(data) {
 }
 function routeBlockStats(data) {
   const users = data.users || [];
-  const progress = data.progress || [];
   return activeRouteBlocks(data.route || emptyRoute()).map((b, idx) => {
-    const completed = users.filter((u) => blockCompleted(progress, u.id, b.id)).length;
+    const completed = users.filter((u) => blockLearningStatus(data, u, b).completed).length;
     return {
       id: b.id,
       title: b.title || `Bloque ${idx + 1}`,
@@ -1310,8 +1429,32 @@ function UsersAdmin({ data, persist, busy }) {
 
 /* ================= Admin: dashboard de aprendizaje ================= */
 function AdminDashboard({ data }) {
+  const [filters, setFilters] = useState({ block: "actual", attendance: "all", audio: "all", game: "all", unlock: "all", risk: "all" });
   const rows = useMemo(() => dashboardRows(data), [data]);
   const blocks = useMemo(() => routeBlockStats(data), [data]);
+  const activeBlocks = activeRouteBlocks(data.route || emptyRoute());
+  const enrichedRows = useMemo(() => rows.map((r) => {
+    const gates = unlockedRouteBlocks(data, r.user);
+    const currentGate = gates.find((g) => !g.status.completed && !g.adminLocked) || gates[gates.length - 1];
+    const selectedGate = filters.block === "actual"
+      ? currentGate
+      : gates.find((g) => g.block.id === filters.block) || currentGate;
+    const status = selectedGate?.status || null;
+    const games = status?.requiredGames || [];
+    const gameState = !games.length ? "nogame" : games.every((g) => g.passed) ? "passed" : games.some((g) => g.played && !g.passed) ? "failed" : "pending";
+    const audioState = !status?.hasAudio ? "noaudio" : status.attended ? "exempt" : status.audioOk ? "ok" : "pending";
+    const attendanceState = status?.attended ? "present" : "absent";
+    const unlockState = selectedGate?.unlocked ? "unlocked" : "locked";
+    const riskState = r.issues.length || unlockState === "locked" || audioState === "pending" || gameState === "pending" || gameState === "failed" ? "risk" : "ok";
+    return { ...r, gate: selectedGate, blockStatus: status, gameState, audioState, attendanceState, unlockState, riskState };
+  }), [rows, data, filters.block]);
+  const filteredRows = enrichedRows.filter((r) =>
+    (filters.attendance === "all" || r.attendanceState === filters.attendance) &&
+    (filters.audio === "all" || r.audioState === filters.audio) &&
+    (filters.game === "all" || r.gameState === filters.game) &&
+    (filters.unlock === "all" || r.unlockState === filters.unlock) &&
+    (filters.risk === "all" || r.riskState === filters.risk)
+  );
   const alerts = rows.filter((r) => r.issues.length);
   const registered = rows.length;
   const completeProfiles = rows.filter((r) => r.profileComplete).length;
@@ -1326,14 +1469,26 @@ function AdminDashboard({ data }) {
     return acc;
   }, { correct: 0, total: 0 });
   const avgAccuracy = pct(resultTotals.correct, resultTotals.total);
+  const setFilter = (key, value) => setFilters((prev) => ({ ...prev, [key]: value }));
+  const attendanceLabels = { all: "Todas", present: "Asistió", absent: "No asistió" };
+  const audioLabels = { all: "Todos", ok: "Escuchado", pending: "Pendiente", exempt: "Repaso", noaudio: "Sin audio" };
+  const gameLabels = { all: "Todos", passed: "Aprobado", pending: "Pendiente", failed: "Bajo 80%", nogame: "Sin juego" };
+  const unlockLabels = { all: "Todos", unlocked: "Disponible", locked: "Bloqueado" };
+  const riskLabels = { all: "Todos", risk: "Requiere seguimiento", ok: "Al día" };
+  const labelFor = (map, key) => map[key] || key;
 
   const exportDashboard = () => {
-    const exportRows = rows.map((r) => ({
+    const exportRows = filteredRows.map((r) => ({
       Nombre: r.user.name,
       "Perfil completo": r.profileComplete ? "Si" : "No",
       "Vinculo podio": r.user.linkedCanon || "",
       "Bloques completados": `${r.route.completed}/${r.route.total}`,
       "Avance ruta %": r.route.percent,
+      "Bloque filtro": r.gate?.block?.title || "",
+      Asistencia: labelFor(attendanceLabels, r.attendanceState),
+      Audio: labelFor(audioLabels, r.audioState),
+      Juego: labelFor(gameLabels, r.gameState),
+      Desbloqueo: labelFor(unlockLabels, r.unlockState),
       "Juegos con resultados": r.stats?.played || 0,
       "Aciertos": r.stats ? `${r.stats.correct}/${r.stats.total}` : "",
       "Puntos campeonato": r.stats?.points || 0,
@@ -1353,7 +1508,61 @@ function AdminDashboard({ data }) {
           <div className="dash-title">Dashboard de aprendizaje</div>
           <div className="dim">Monitorea registro, avance de ruta, resultados y personas que necesitan seguimiento.</div>
         </div>
-        <button className="btn btn--gold btn--sm" onClick={exportDashboard} disabled={!rows.length}>Exportar Excel</button>
+        <button className="btn btn--gold btn--sm" onClick={exportDashboard} disabled={!filteredRows.length}>Exportar Excel</button>
+      </div>
+
+      <div className="card dash-filters">
+        <div className="dash-panel-head">
+          <div>
+            <div className="dash-panel-title">Filtros de seguimiento</div>
+            <div className="dim">Mostrando {filteredRows.length} de {registered} participantes.</div>
+          </div>
+          <button
+            className="btn btn--ghost btn--sm"
+            onClick={() => setFilters({ block: "actual", attendance: "all", audio: "all", game: "all", unlock: "all", risk: "all" })}
+          >
+            Limpiar filtros
+          </button>
+        </div>
+        <div className="filter-row">
+          <label className="filter-group">
+            <span>Bloque</span>
+            <select className="inp inp--sm" value={filters.block} onChange={(e) => setFilter("block", e.target.value)}>
+              <option value="actual">Bloque actual de cada participante</option>
+              {activeBlocks.map((b, idx) => <option key={b.id} value={b.id}>{idx + 1}. {b.title}</option>)}
+            </select>
+          </label>
+          <label className="filter-group">
+            <span>Asistencia</span>
+            <select className="inp inp--sm" value={filters.attendance} onChange={(e) => setFilter("attendance", e.target.value)}>
+              {Object.entries(attendanceLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+            </select>
+          </label>
+          <label className="filter-group">
+            <span>Audio</span>
+            <select className="inp inp--sm" value={filters.audio} onChange={(e) => setFilter("audio", e.target.value)}>
+              {Object.entries(audioLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+            </select>
+          </label>
+          <label className="filter-group">
+            <span>Juego</span>
+            <select className="inp inp--sm" value={filters.game} onChange={(e) => setFilter("game", e.target.value)}>
+              {Object.entries(gameLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+            </select>
+          </label>
+          <label className="filter-group">
+            <span>Acceso</span>
+            <select className="inp inp--sm" value={filters.unlock} onChange={(e) => setFilter("unlock", e.target.value)}>
+              {Object.entries(unlockLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+            </select>
+          </label>
+          <label className="filter-group">
+            <span>Estado</span>
+            <select className="inp inp--sm" value={filters.risk} onChange={(e) => setFilter("risk", e.target.value)}>
+              {Object.entries(riskLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+            </select>
+          </label>
+        </div>
       </div>
 
       <div className="dash-kpis">
@@ -1423,33 +1632,47 @@ function AdminDashboard({ data }) {
             <div className="dim">Estado general de ruta, resultados y perfil.</div>
           </div>
         </div>
-        {rows.length === 0 ? (
+        {registered === 0 ? (
           <div className="empty empty--compact">Aún no hay usuarios registrados.</div>
+        ) : filteredRows.length === 0 ? (
+          <div className="empty empty--compact">No hay participantes con estos filtros.</div>
         ) : (
           <div className="dash-table-wrap">
             <table className="dash-table">
               <thead>
                 <tr>
                   <th>Participante</th>
-                  <th>Ruta</th>
-                  <th>Juegos</th>
-                  <th>Aciertos</th>
+                  <th>Bloque evaluado</th>
+                  <th>Asistencia</th>
+                  <th>Audio</th>
+                  <th>Juego</th>
+                  <th>Acceso</th>
                   <th>Estado</th>
                 </tr>
               </thead>
               <tbody>
-                {rows.map((r) => (
+                {filteredRows.map((r) => (
                   <tr key={r.user.id}>
                     <td>
                       <span className="cell-person">
                         <span className="avatar avatar--xs">{initials(r.user.name)}</span>
-                        <b>{r.user.name}</b>
+                        <span className="cell-main">
+                          <b>{r.user.name}</b>
+                          <small>{r.route.completed}/{r.route.total} bloques · {r.route.percent}% ruta</small>
+                        </span>
                       </span>
                     </td>
-                    <td>{r.route.completed}/{r.route.total} <span className="dim">({r.route.percent}%)</span></td>
-                    <td>{r.stats?.played || 0}</td>
-                    <td>{r.stats ? `${r.stats.correct}/${r.stats.total}` : "—"}</td>
-                    <td><span className={`status-pill ${r.issues.length ? "status-pill--warn" : "status-pill--ok"}`}>{r.status}</span></td>
+                    <td>
+                      <span className="cell-main">
+                        <b>{r.gate?.block?.title || "Sin bloque"}</b>
+                        <small>{r.blockStatus?.completed ? "Completado" : r.blockStatus?.requirementsMet ? "Listo para cerrar" : "En proceso"}</small>
+                      </span>
+                    </td>
+                    <td><span className={`mini-state mini-state--${r.attendanceState}`}>{labelFor(attendanceLabels, r.attendanceState)}</span></td>
+                    <td><span className={`mini-state mini-state--${r.audioState}`}>{labelFor(audioLabels, r.audioState)}</span></td>
+                    <td><span className={`mini-state mini-state--${r.gameState}`}>{labelFor(gameLabels, r.gameState)}</span></td>
+                    <td><span className={`mini-state mini-state--${r.unlockState}`}>{labelFor(unlockLabels, r.unlockState)}</span></td>
+                    <td><span className={`status-pill ${r.riskState === "risk" ? "status-pill--warn" : "status-pill--ok"}`}>{r.riskState === "risk" ? r.status : "Al día"}</span></td>
                   </tr>
                 ))}
               </tbody>
@@ -1469,6 +1692,7 @@ function RouteEditor({ data, persist, busy }) {
   const [dirty, setDirty] = useState(false);
   const [confirmDel, setConfirmDel] = useState(null); // índice del bloque a confirmar
   const [uploading, setUploading] = useState(null); // índice del bloque subiendo PDF
+  const [uploadingAudio, setUploadingAudio] = useState(null);
   const [upErr, setUpErr] = useState(null);
 
   const uploadPdf = async (bi, file) => {
@@ -1483,6 +1707,21 @@ function RouteEditor({ data, persist, busy }) {
       setUpErr("No se pudo subir el archivo. Revisa tu conexión e inténtalo de nuevo.");
     } finally {
       setUploading(null);
+    }
+  };
+
+  const uploadAudio = async (bi, file) => {
+    if (!file) return;
+    if (!/^audio\//.test(file.type || "")) { setUpErr("Debe ser un archivo de audio."); return; }
+    setUpErr(null);
+    setUploadingAudio(bi);
+    try {
+      const url = await sbUpload(file);
+      setBlockField(bi, "audioUrl", url);
+    } catch (e) {
+      setUpErr("No se pudo subir el audio. Revisa tu conexión e inténtalo de nuevo.");
+    } finally {
+      setUploadingAudio(null);
     }
   };
 
@@ -1514,7 +1753,7 @@ function RouteEditor({ data, persist, busy }) {
   };
   const addResource = (bi, type) =>
     mark(() => setBlocks((prev) => prev.map((b, i) =>
-      i === bi ? { ...b, resources: [...(b.resources || []), { id: uid(), type, label: "", url: "", slide: "" }] } : b
+      i === bi ? { ...b, resources: [...(b.resources || []), { id: uid(), type, label: "", url: "", slide: "", exerciseId: "", passingPct: PASSING_PCT }] } : b
     )));
   const setResField = (bi, ri, field, val) =>
     mark(() => setBlocks((prev) => prev.map((b, i) =>
@@ -1531,7 +1770,16 @@ function RouteEditor({ data, persist, busy }) {
       title: (b.title || "").trim(),
       subtitle: (b.subtitle || "").trim(),
       pptUrl: (b.pptUrl || "").trim(),
-      resources: (b.resources || []).filter((r) => (r.url || "").trim()).map((r) => ({ ...r, url: r.url.trim(), label: (r.label || "").trim(), slide: r.slide })),
+      audioUrl: (b.audioUrl || "").trim(),
+      attendance: splitNames(b.attendanceText ?? b.attendance),
+      resources: (b.resources || []).filter((r) => (r.url || "").trim()).map((r) => ({
+        ...r,
+        url: r.url.trim(),
+        label: (r.label || "").trim(),
+        slide: r.slide,
+        exerciseId: r.exerciseId || "",
+        passingPct: toInt(r.passingPct, PASSING_PCT),
+      })),
     }));
     await persist({ ...data, route: { title: title.trim() || "Ruta de Preparación", blocks: clean } });
     setDirty(false);
@@ -1599,6 +1847,25 @@ function RouteEditor({ data, persist, busy }) {
           {b.pptUrl && !isValidUrl(b.pptUrl) && <div className="warn-inline">⚠ El link debe empezar con http:// o https://</div>}
           {upErr && uploading === null && <div className="warn-inline">{upErr}</div>}
 
+          <label className="lbl" style={{ marginTop: 10 }}>Audio de acompañamiento</label>
+          <div className="ppt-input-group">
+            <label className="btn btn--teal-o btn--sm ppt-upload-btn">
+              {uploadingAudio === bi ? "Subiendo audio..." : "Subir audio"}
+              <input type="file" accept="audio/*" style={{ display: "none" }} disabled={uploadingAudio === bi} onChange={(e) => { if (e.target.files[0]) uploadAudio(bi, e.target.files[0]); e.target.value = ""; }} />
+            </label>
+            <span className="dim" style={{ fontSize: 12 }}>Si hay asistencia registrada, este audio queda como repaso opcional.</span>
+          </div>
+          <input className="inp" value={b.audioUrl || ""} onChange={(e) => setBlockField(bi, "audioUrl", e.target.value)} placeholder="Sube un audio o pega un link MP3/M4A" />
+
+          <label className="lbl" style={{ marginTop: 10 }}>Lista de asistencia presencial</label>
+          <textarea
+            className="inp inp--mono"
+            rows={3}
+            value={b.attendanceText ?? (Array.isArray(b.attendance) ? b.attendance.join("\n") : (b.attendance || ""))}
+            onChange={(e) => setBlockField(bi, "attendanceText", e.target.value)}
+            placeholder={"Pega un nombre por línea. Si asistió, no necesita escuchar el audio para aprobar este bloque."}
+          />
+
           <div className="res-edit-groups">
             {(b.resources || []).length > 0 && (
               <div className="res-edit-list">
@@ -1608,6 +1875,15 @@ function RouteEditor({ data, persist, busy }) {
                     <input className="inp inp--sm" value={r.label} onChange={(e) => setResField(bi, ri, "label", e.target.value)} placeholder={r.type === "game" ? "Nombre del juego" : "Título del video"} />
                     <input className="inp inp--sm" value={r.url} onChange={(e) => setResField(bi, ri, "url", e.target.value)} placeholder={r.type === "game" ? "Link de Wordwall" : "Link de YouTube"} />
                     <input className="inp inp--slide" value={r.slide} onChange={(e) => setResField(bi, ri, "slide", e.target.value.replace(/\D/g, ""))} placeholder="Lám." title="Nº de lámina" />
+                    {r.type === "game" && (
+                      <>
+                        <select className="inp inp--sm" value={r.exerciseId || ""} onChange={(e) => setResField(bi, ri, "exerciseId", e.target.value)}>
+                          <option value="">Vincular resultado Wordwall</option>
+                          {data.exercises.map((ex) => <option key={ex.id} value={ex.id}>{ex.title}</option>)}
+                        </select>
+                        <input className="inp inp--slide" value={r.passingPct ?? PASSING_PCT} onChange={(e) => setResField(bi, ri, "passingPct", e.target.value.replace(/\D/g, ""))} title="% mínimo" />
+                      </>
+                    )}
                     <button className="icon-btn" title="Quitar recurso" onClick={() => removeResource(bi, ri)}>✕</button>
                   </div>
                 ))}
@@ -2336,11 +2612,13 @@ function ResourceButton({ r, onOpen }) {
   );
 }
 
-function RouteField({ route, muted, sessionUser, progress, onToggleBlockProgress, progressBusy }) {
+function RouteField({ data, muted, sessionUser, onToggleBlockProgress, onOpenBlock, onAudioProgress, progressBusy }) {
   const [viewer, setViewer] = useState(null); // {type,url,label}
   const [openBlock, setOpenBlock] = useState(null);
+  const route = data.route || emptyRoute();
   const blocks = route?.blocks || [];
-  const routeStats = routeProgressStats(route, progress, sessionUser?.id);
+  const routeStats = routeProgressStats(data, sessionUser);
+  const gatedBlocks = unlockedRouteBlocks(data, sessionUser);
 
   if (!blocks.length) {
     return (
@@ -2371,12 +2649,12 @@ function RouteField({ route, muted, sessionUser, progress, onToggleBlockProgress
 
       <div className="pitch-path">
         <div className="path-line" aria-hidden />
-        {blocks.map((b, i) => {
+        {gatedBlocks.map(({ block: b, unlocked, adminLocked, status }, i) => {
           const isLast = i === blocks.length - 1;
           const side = i % 2 === 0 ? "left" : "right";
           const resCount = (b.resources || []).length;
-          const locked = !!b.locked;
-          const done = !locked && blockCompleted(progress, sessionUser?.id, b.id);
+          const locked = adminLocked || !unlocked;
+          const done = !locked && status.completed;
           return (
             <div key={b.id} className={`station station--${side} ${isLast ? "station--goal" : ""} ${locked ? "station--locked" : ""} ${done ? "station--done" : ""}`}>
               <div className="station-node">
@@ -2384,7 +2662,11 @@ function RouteField({ route, muted, sessionUser, progress, onToggleBlockProgress
               </div>
               <button
                 className="station-card"
-                onClick={() => (locked ? null : setOpenBlock(b))}
+                onClick={() => {
+                  if (locked) return;
+                  setOpenBlock(b);
+                  onOpenBlock?.(b.id);
+                }}
                 disabled={locked}
                 aria-disabled={locked}
               >
@@ -2398,7 +2680,7 @@ function RouteField({ route, muted, sessionUser, progress, onToggleBlockProgress
                 </div>
                 <div className="station-title">{b.title || `Bloque ${i + 1}`}</div>
                 {b.subtitle && !locked ? <div className="station-desc">{b.subtitle}</div> : null}
-                <span className="station-cta">{locked ? "Disponible pronto 🔒" : done ? "Completado ✓" : "Abrir bloque →"}</span>
+                <span className="station-cta">{locked ? (adminLocked ? "Disponible pronto 🔒" : "Completa el bloque anterior 🔒") : done ? "Completado ✓" : "Abrir bloque →"}</span>
               </button>
             </div>
           );
@@ -2412,9 +2694,10 @@ function RouteField({ route, muted, sessionUser, progress, onToggleBlockProgress
       {openBlock && (
         <BlockModal
           block={openBlock}
-          isCompleted={blockCompleted(progress, sessionUser?.id, openBlock.id)}
+          status={blockLearningStatus(data, sessionUser, openBlock)}
           progressBusy={progressBusy}
           onToggleComplete={(completed) => onToggleBlockProgress(openBlock.id, completed)}
+          onAudioProgress={(percent, completed) => onAudioProgress(openBlock.id, percent, completed)}
           onClose={() => setOpenBlock(null)}
           onOpenResource={(r) => setViewer(r)}
         />
@@ -2450,10 +2733,51 @@ function PptFrame({ embedUrl, originalUrl }) {
   );
 }
 
-function BlockModal({ block, isCompleted, progressBusy, onToggleComplete, onClose, onOpenResource }) {
+function BlockAudio({ url, percent, completed, onAudioProgress }) {
+  const [localPercent, setLocalPercent] = useState(percent || 0);
+  const reported = useRef(completed);
+  useEffect(() => { setLocalPercent(percent || 0); reported.current = completed; }, [percent, completed]);
+  if (!url) return null;
+  return (
+    <div className={`audio-card ${completed ? "audio-card--done" : ""}`}>
+      <div className="audio-head">
+        <div>
+          <div className="audio-title">Audio de acompañamiento</div>
+          <div className="dim">{completed ? "Escuchado" : `Se marca escuchado al llegar al ${AUDIO_COMPLETE_PCT}%`}</div>
+        </div>
+        <b>{Math.max(localPercent, percent || 0)}%</b>
+      </div>
+      <audio
+        controls
+        src={url}
+        onTimeUpdate={(e) => {
+          const a = e.currentTarget;
+          if (!a.duration || !Number.isFinite(a.duration)) return;
+          const next = Math.min(100, Math.round((a.currentTime / a.duration) * 100));
+          setLocalPercent(next);
+          if (next >= AUDIO_COMPLETE_PCT && !reported.current) {
+            reported.current = true;
+            onAudioProgress(next, true);
+          }
+        }}
+        onEnded={() => {
+          setLocalPercent(100);
+          if (!reported.current) {
+            reported.current = true;
+            onAudioProgress(100, true);
+          }
+        }}
+      />
+      <span className="route-progress-bar"><i style={{ width: `${Math.max(localPercent, percent || 0)}%` }} /></span>
+    </div>
+  );
+}
+
+function BlockModal({ block, status, progressBusy, onToggleComplete, onAudioProgress, onClose, onOpenResource }) {
   const games = (block.resources || []).filter((r) => r.type === "game");
   const videos = (block.resources || []).filter((r) => r.type === "video");
   const pptEmbed = toEmbedUrl(block.pptUrl);
+  const isCompleted = !!status.completed;
   return (
     <div className="overlay" onClick={onClose}>
       <div className="modal modal--wide" onClick={(e) => e.stopPropagation()}>
@@ -2472,19 +2796,48 @@ function BlockModal({ block, isCompleted, progressBusy, onToggleComplete, onClos
           <div className="ppt-empty">Este bloque no tiene presentación asignada.</div>
         )}
 
+        {block.audioUrl && (
+          <BlockAudio
+            url={block.audioUrl}
+            percent={status.row?.audioPercent || 0}
+            completed={status.audioOk}
+            onAudioProgress={onAudioProgress}
+          />
+        )}
+
+        {status.attended && (
+          <div className="attendance-note">Asistencia registrada: el audio queda como repaso opcional.</div>
+        )}
+
+        {status.requiredGames.length > 0 && (
+          <div className="requirements-card">
+            <div className="requirements-title">Juegos requeridos para aprobar</div>
+            {status.requiredGames.map((g, idx) => (
+              <div key={idx} className="requirement-row">
+                <span>{g.title}</span>
+                <b className={g.passed ? "t-teal" : "t-red"}>
+                  {g.played ? `${g.percent}% / meta ${g.passing}%` : `Pendiente / meta ${g.passing}%`}
+                </b>
+              </div>
+            ))}
+          </div>
+        )}
+
         <div className={`block-progress-card ${isCompleted ? "block-progress-card--done" : ""}`}>
           <div>
             <div className="block-progress-title">{isCompleted ? "Bloque completado" : "Avance del bloque"}</div>
             <div className="dim" style={{ fontSize: 13 }}>
               {isCompleted
                 ? "Este bloque ya cuenta en tu ruta formativa."
-                : "Cuando termines la presentacion y sus recursos, registra tu avance."}
+                : status.requirementsMet
+                  ? "Ya cumples los requisitos. Registra el cierre para desbloquear el siguiente bloque."
+                  : `Aún falta: ${status.missing.join(", ")}`}
             </div>
           </div>
           <button
             className={isCompleted ? "btn btn--ghost btn--sm" : "btn btn--teal btn--sm"}
             onClick={() => onToggleComplete(!isCompleted)}
-            disabled={progressBusy}
+            disabled={progressBusy || (!isCompleted && !status.requirementsMet)}
           >
             {isCompleted ? "Marcar como pendiente" : "Marcar bloque como completado"}
           </button>
@@ -2584,6 +2937,7 @@ function AuthScreen({ data, setData, onLogin }) {
     if (users.some((x) => norm(x.name) === norm(rName))) { setRErr("Ya existe alguien con ese nombre. Si eres tú, inicia sesión."); return; }
     if (rPass.length < 4) { setRErr("La clave debe tener al menos 4 caracteres."); return; }
     if (rPass !== rPass2) { setRErr("Las claves no coinciden."); return; }
+    if (!hasMeaningfulAnswer(rRetreat)) { setRErr("Escribe una fecha o referencia real de cuándo viviste tu retiro EJE."); return; }
     if (phraseKey(rPhrase) !== ACCESS_PHRASE_KEY) { setRErr("La frase de acceso no coincide."); return; }
     setBusy(true);
     const u = {
@@ -2634,8 +2988,9 @@ function AuthScreen({ data, setData, onLogin }) {
                 <input className="inp" type="date" value={rBirth} onChange={(e) => setRBirth(e.target.value)} />
               </div>
               <div>
-                <label className="lbl">¿Cuándo viviste tu retiro EJE?</label>
+                <label className="lbl">¿Cuándo viviste tu retiro EJE? *</label>
                 <input className="inp" value={rRetreat} onChange={(e) => setRRetreat(e.target.value)} placeholder="Ej. Noviembre 2023" />
+                <div className="auth-hint">Debe ser una fecha o referencia real, no solo puntos o guiones.</div>
               </div>
             </div>
 
@@ -2672,7 +3027,7 @@ function AuthScreen({ data, setData, onLogin }) {
 /* Panel del perfil (lo que ve el participante logueado) */
 function ProfileCard({ user, data, onClose, onLogout }) {
   const age = ageFromBirth(user.birthdate);
-  const myRoute = routeProgressStats(data.route, data.progress, user.id);
+  const myRoute = routeProgressStats(data, user);
   const myStats = useMemo(() => {
     if (!user.linkedCanon) return null;
     const cons = buildConsolidated(data.exercises, data.aliases, data.excluded);
@@ -2795,23 +3150,47 @@ export default function App() {
     if (d) setData(d);
   }, []);
 
+  const mergeProgressRow = useCallback((saved) => {
+    setData((prev) => {
+      if (!prev) return prev;
+      const rest = (prev.progress || []).filter((p) => !(p.userId === saved.userId && p.blockId === saved.blockId));
+      return { ...prev, progress: [...rest, saved] };
+    });
+  }, []);
+
   const handleToggleBlockProgress = useCallback(async (blockId, completed) => {
     if (!sessionUserId) return;
     setProgressBusy(true);
     try {
       const saved = await saveBlockProgress(sessionUserId, blockId, completed);
-      setData((prev) => {
-        if (!prev) return prev;
-        const rest = (prev.progress || []).filter((p) => !(p.userId === sessionUserId && p.blockId === blockId));
-        return { ...prev, progress: [...rest, saved] };
-      });
+      mergeProgressRow(saved);
     } catch (e) {
       console.error("saveBlockProgress:", e);
       window.alert("No se pudo guardar el avance. Revisa que la tabla route_progress exista en Supabase.");
     } finally {
       setProgressBusy(false);
     }
-  }, [sessionUserId]);
+  }, [sessionUserId, mergeProgressRow]);
+
+  const handleOpenBlock = useCallback(async (blockId) => {
+    if (!sessionUserId) return;
+    try {
+      const saved = await saveRouteProgress(sessionUserId, blockId, { opened: true });
+      mergeProgressRow(saved);
+    } catch (e) {
+      console.warn("open block progress:", e);
+    }
+  }, [sessionUserId, mergeProgressRow]);
+
+  const handleAudioProgress = useCallback(async (blockId, audioPercent, audioCompleted) => {
+    if (!sessionUserId) return;
+    try {
+      const saved = await saveRouteProgress(sessionUserId, blockId, { audioPercent, audioCompleted });
+      mergeProgressRow(saved);
+    } catch (e) {
+      console.warn("audio progress:", e);
+    }
+  }, [sessionUserId, mergeProgressRow]);
 
   if (loading)
     return (
@@ -2903,12 +3282,13 @@ export default function App() {
 
           {mode === "ruta" && (
             <RouteField
-              route={data.route || emptyRoute()}
+              data={data}
               muted={muted}
               sessionUser={sessionUser}
-              progress={data.progress || []}
               progressBusy={progressBusy}
               onToggleBlockProgress={handleToggleBlockProgress}
+              onOpenBlock={handleOpenBlock}
+              onAudioProgress={handleAudioProgress}
             />
           )}
 
@@ -3543,6 +3923,10 @@ button:focus-visible,.inp:focus-visible{outline:2px solid var(--turf);outline-of
 .dash-kpi span{font-family:var(--disp);font-style:italic;font-size:34px;line-height:1;color:var(--gold2)}
 .dash-kpi b{font-size:13px}
 .dash-kpi small{color:var(--dim);font-size:11px}
+.dash-filters{display:grid;gap:12px;border-color:var(--line2)}
+.filter-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px}
+.filter-group{display:flex;flex-direction:column;gap:6px}
+.filter-group span{font-family:var(--mono);font-size:10px;font-weight:800;letter-spacing:1px;text-transform:uppercase;color:var(--dim)}
 .dash-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}
 .dash-panel{display:grid;gap:12px}
 .dash-panel-head{display:flex;justify-content:space-between;align-items:flex-start;gap:12px}
@@ -3561,6 +3945,13 @@ button:focus-visible,.inp:focus-visible{outline:2px solid var(--turf);outline-of
 .dash-table th{text-align:left;color:var(--dim);font-family:var(--mono);font-size:10px;letter-spacing:1px;text-transform:uppercase;padding:9px 10px;border-bottom:1px solid var(--line)}
 .dash-table td{padding:11px 10px;border-bottom:1px solid #26355F66;vertical-align:middle}
 .dash-table tr:hover td{background:#ffffff05}
+.cell-main{display:flex;flex-direction:column;gap:2px;min-width:130px}
+.cell-main small{color:var(--dim);font-size:11.5px}
+.mini-state{display:inline-flex;align-items:center;white-space:nowrap;border-radius:999px;padding:4px 9px;font-size:11px;font-weight:900;line-height:1.2;border:1px solid var(--line);background:#ffffff08;color:var(--dim)}
+.mini-state--present,.mini-state--ok,.mini-state--passed,.mini-state--unlocked{background:#16DB9316;color:var(--turf);border-color:#16DB9344}
+.mini-state--exempt,.mini-state--nogame,.mini-state--noaudio{background:#7D8CFF16;color:#AEB7FF;border-color:#7D8CFF44}
+.mini-state--pending,.mini-state--failed,.mini-state--locked,.mini-state--absent{background:#FFC53116;color:var(--gold2);border-color:#FFC53144}
+.mini-state--failed{background:#FF2E6318;color:var(--hot2);border-color:#FF2E6350}
 .status-pill{display:inline-flex;max-width:300px;border-radius:999px;padding:4px 9px;font-size:11px;font-weight:800;line-height:1.2}
 .status-pill--ok{background:#16DB931a;color:var(--turf);border:1px solid #16DB9344}
 .status-pill--warn{background:#FFC53116;color:var(--gold2);border:1px solid #FFC53144}
@@ -3653,6 +4044,17 @@ button:focus-visible,.inp:focus-visible{outline:2px solid var(--turf);outline-of
   background:var(--bg0);border:1px solid var(--line);border-radius:12px;padding:13px 15px;margin:0 0 16px}
 .block-progress-card--done{border-color:#16DB9366;background:#16DB930f}
 .block-progress-title{font-weight:900;font-size:14px}
+.audio-card,.requirements-card,.attendance-note{background:var(--bg0);border:1px solid var(--line);border-radius:12px;padding:13px 15px;margin:0 0 14px}
+.audio-card{display:grid;gap:10px}
+.audio-card--done{border-color:#16DB9366;background:#16DB930f}
+.audio-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}
+.audio-title,.requirements-title{font-weight:900;font-size:14px}
+.audio-card audio{width:100%}
+.attendance-note{color:var(--turf);font-size:13px;font-weight:800;border-color:#16DB9344;background:#16DB930f}
+.requirements-card{display:grid;gap:9px}
+.requirement-row{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:8px 0;border-top:1px solid #26355F66;font-size:13px}
+.requirement-row:first-of-type{border-top:0}
+.requirement-row span{font-weight:800}
 .res-group{margin-top:14px}
 .res-group-title{font-family:var(--mono);font-size:11px;font-weight:700;letter-spacing:1.5px;color:var(--dim);
   text-transform:uppercase;margin-bottom:9px}
