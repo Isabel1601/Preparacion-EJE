@@ -2,8 +2,8 @@ import React, { useState, useEffect, useRef, useMemo, useCallback } from "react"
 import * as XLSX from "xlsx";
 
 /* ================= Config ================= */
-const PTS = [10, 8, 6, 5, 4];
-const PTS_PART = 2;
+const POINTS_PER_CORRECT = 1000;
+const SPEED_TIEBREAKER_MAX = 9;
 const PASSING_PCT = 80;
 const AUDIO_COMPLETE_PCT = 85;
 const REDUCED =
@@ -113,6 +113,19 @@ function mapAttendance(attendanceRows = []) {
   }));
 }
 
+function mapQuestions(questionRows = []) {
+  return (questionRows || []).map((q) => ({
+    id: q.id,
+    userId: q.user_id || "",
+    userName: q.user_name || "",
+    question: q.question || "",
+    status: q.status || "new",
+    answer: q.answer || "",
+    createdAt: q.created_at || "",
+    updatedAt: q.updated_at || "",
+  }));
+}
+
 async function loadProgress() {
   try {
     const rows = await sbFetch("route_progress?select=*&order=updated_at.desc");
@@ -129,6 +142,16 @@ async function loadAttendance() {
     return mapAttendance(rows);
   } catch (e) {
     console.warn("loadAttendance Supabase:", e);
+    return [];
+  }
+}
+
+async function loadQuestions() {
+  try {
+    const rows = await sbFetch("question_box?select=*&order=created_at.desc");
+    return mapQuestions(rows);
+  } catch (e) {
+    console.warn("loadQuestions Supabase:", e);
     return [];
   }
 }
@@ -180,16 +203,48 @@ async function saveSessionAttendance(userId, blockId, attended = true) {
   return mapAttendance(saved)[0] || mapAttendance([row])[0];
 }
 
+async function submitQuestion(user, question) {
+  const now = new Date().toISOString();
+  const row = {
+    id: uid(),
+    user_id: user?.id || null,
+    user_name: user?.name || "",
+    question: String(question || "").trim(),
+    status: "new",
+    created_at: now,
+    updated_at: now,
+  };
+  const saved = await sbFetch("question_box", {
+    method: "POST",
+    headers: { Prefer: "return=representation" },
+    body: JSON.stringify(row),
+  });
+  return mapQuestions(saved)[0] || mapQuestions([row])[0];
+}
+
+async function updateQuestionBox(id, patch = {}) {
+  const row = { updated_at: new Date().toISOString() };
+  if ("status" in patch) row.status = patch.status;
+  if ("answer" in patch) row.answer = patch.answer || null;
+  const saved = await sbFetch(`question_box?id=eq.${encodeURIComponent(id)}`, {
+    method: "PATCH",
+    headers: { Prefer: "return=representation" },
+    body: JSON.stringify(row),
+  });
+  return mapQuestions(saved)[0];
+}
+
 /* ===== Carga: arma el objeto 'data' leyendo las 4 tablas ===== */
 async function loadData() {
   try {
-    const [configRows, routeRows, exRows, userRows, progress, attendance] = await Promise.all([
+    const [configRows, routeRows, exRows, userRows, progress, attendance, questions] = await Promise.all([
       sbFetch("config?id=eq.main&select=data"),
       sbFetch("route?id=eq.main&select=data"),
       sbFetch("exercises?select=id,data&order=created_at.asc"),
       sbFetch("users?select=*&order=created_at.asc"),
       loadProgress(),
       loadAttendance(),
+      loadQuestions(),
     ]);
     const config = (configRows && configRows[0] && configRows[0].data) || {};
     const route = (routeRows && routeRows[0] && routeRows[0].data) || emptyRoute();
@@ -204,6 +259,7 @@ async function loadData() {
       users,
       progress,
       attendance,
+      questions,
     };
   } catch (e) {
     console.error("loadData Supabase:", e);
@@ -305,7 +361,7 @@ async function saveData(next, prev) {
   await Promise.all(jobs);
   return next;
 }
-const emptyData = () => ({ pin: null, aliases: {}, exercises: [], excluded: [], route: emptyRoute(), users: [], progress: [], attendance: [] });
+const emptyData = () => ({ pin: null, aliases: {}, exercises: [], excluded: [], route: emptyRoute(), users: [], progress: [], attendance: [], questions: [] });
 const emptyRoute = () => ({ title: "Ruta de Preparación", blocks: [] });
 /* Un bloque de la ruta formativa:
    { id, title, subtitle, pptUrl, resources: [ { id, type: 'game'|'video', label, url, slide } ] }
@@ -368,6 +424,17 @@ function youtubeEmbed(url) {
   let m = u.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/)([a-zA-Z0-9_-]{11})/);
   if (m) return `https://www.youtube.com/embed/${m[1]}`;
   return u;
+}
+function iframeSrc(value) {
+  const raw = String(value || "").trim();
+  const m = raw.match(/src=["']([^"']+)["']/i);
+  return m ? m[1] : raw;
+}
+function wordwallEmbedUrl(value) {
+  const raw = iframeSrc(value);
+  if (!raw || !/wordwall\.net/i.test(raw)) return "";
+  if (/\/embed\//i.test(raw)) return raw;
+  return raw;
 }
 function youtubeId(url) {
   const m = String(url || "").match(/(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/)([a-zA-Z0-9_-]{11})/);
@@ -675,6 +742,42 @@ function parseDetalle(text) {
 /* ============ Fusión de participantes (re-subida) ============
    Combina la lista existente con la nueva: actualiza a quien ya estaba
    (conservando el mejor intento) y agrega a los nuevos.                    */
+async function importWordwallResultsFromUrl(url) {
+  const cleanUrl = String(url || "").trim();
+  if (!/^https?:\/\//i.test(cleanUrl)) throw new Error("Pega un link valido de Wordwall.");
+  const res = await fetch(cleanUrl);
+  if (!res.ok) throw new Error("No se pudo leer el link de resultados.");
+  const contentType = (res.headers.get("content-type") || "").toLowerCase();
+  const buf = await res.arrayBuffer();
+  if (/\.(xlsx|xls)(\?|#|$)/i.test(cleanUrl) || contentType.includes("spreadsheet") || contentType.includes("excel")) {
+    const parsed = parseWorkbook(buf);
+    if (parsed.students.length) return parsed;
+  }
+  const text = new TextDecoder("utf-8").decode(buf);
+  const entries = parseDetalle(text);
+  if (entries.length) {
+    return {
+      title: "Resultados importados desde Wordwall",
+      questions: [],
+      fromUrl: true,
+      students: entries.map((e, idx) => ({
+        raw: e.name,
+        order: idx,
+        correct: e.correct,
+        total: e.correct + e.incorrect,
+        answers: {},
+        score: e.score,
+        submitted: e.submitted,
+      })),
+    };
+  }
+  try {
+    const parsed = parseWorkbook(buf);
+    if (parsed.students.length) return parsed;
+  } catch {}
+  throw new Error("Wordwall no permitio leer ese link desde la app. Exporta el Excel o pega el detallado.");
+}
+
 function mergeStudents(existing, incoming) {
   const map = new Map();
   for (const s of existing) map.set(norm(s.raw), { ...s });
@@ -687,7 +790,7 @@ function mergeStudents(existing, incoming) {
       map.set(k, { ...s });
       added++;
     } else {
-      const firstAttempt = prev.firstAttempt || s.firstAttempt || attemptSnapshot(prev);
+      const firstAttempt = earliestAttemptSnapshot(prev.firstAttempt || attemptSnapshot(prev), s.firstAttempt || attemptSnapshot(s));
       const attemptCount = Math.max(prev.attemptCount || 1, s.attemptCount || 1);
       const better = isBetterAttempt(s, prev);
       if (better) {
@@ -738,13 +841,23 @@ function learningAttempt(s) {
   const a = s?.bestAttempt;
   return a ? { ...s, ...a } : s;
 }
+function isEarlierAttempt(b, a) {
+  if (!a) return true;
+  if (!b) return false;
+  const tb = attemptTime(b), ta = attemptTime(a);
+  if (tb && ta && tb !== ta) return tb < ta;
+  return (b.order ?? 0) < (a.order ?? 0);
+}
+function earliestAttemptSnapshot(a, b) {
+  return attemptSnapshot(isEarlierAttempt(b, a) ? b : a);
+}
 /* Decide si el intento 'b' es mejor que 'a' para conservar al fusionar/deduplicar.
-   Prioriza: mayor puntaje Wordwall > más aciertos > intento más reciente. */
+   Prioriza: más aciertos > mayor puntaje Wordwall > intento más reciente. */
 function isBetterAttempt(b, a) {
   if (!a) return true;
+  if ((b.correct ?? 0) !== (a.correct ?? 0)) return (b.correct ?? 0) > (a.correct ?? 0);
   const sb = b.score ?? -1, sa = a.score ?? -1;
   if (sb !== sa) return sb > sa;
-  if ((b.correct ?? 0) !== (a.correct ?? 0)) return (b.correct ?? 0) > (a.correct ?? 0);
   // desempate final: el más reciente (mayor 'submitted' o mayor 'order')
   const tb = attemptTime(b), ta = attemptTime(a);
   if (tb !== ta) return tb > ta;
@@ -766,30 +879,44 @@ function isExcluded(canon, excluded) {
 function hasScores(ex) {
   return ex.students.some((s) => s.score != null);
 }
+function speedTieBonus(rankInTie, tieSize) {
+  if (tieSize <= 1) return 0;
+  const step = SPEED_TIEBREAKER_MAX / Math.max(1, tieSize - 1);
+  return Math.round((SPEED_TIEBREAKER_MAX - rankInTie * step) * 100) / 100;
+}
 function rankExercise(ex, aliases, excluded) {
   const byCanon = new Map();
   for (const s of ex.students) {
     const canon = canonicalOf(s.raw, aliases);
     if (isExcluded(canon, excluded)) continue; // fuera del podio/ranking
     const prev = byCanon.get(canon);
-    // conservar el mejor intento: mayor puntaje, luego aciertos, luego más reciente
+    // puntos campeonato: conservar el primer intento; Wordwall solo desempata si hay mismos aciertos
     const rankedAttempt = { ...podiumAttempt(s), canon, bestAttempt: s.bestAttempt, firstAttempt: s.firstAttempt, attemptCount: s.attemptCount };
-    if (!prev || isBetterAttempt(rankedAttempt, prev)) byCanon.set(canon, rankedAttempt);
+    if (!prev || isEarlierAttempt(rankedAttempt, prev)) byCanon.set(canon, rankedAttempt);
   }
   const arr = [...byCanon.values()];
   // Regla de orden: SIEMPRE gana quien tiene más aciertos.
   // El puntaje Wordwall solo desempata entre quienes tienen los mismos aciertos.
-  // (El modo "solo aciertos" ignora el desempate por Wordwall y usa el orden de participación.)
-  const useScoreTiebreak = ex.sortBy !== "correct";
   arr.sort((a, b) => {
     if (b.correct !== a.correct) return b.correct - a.correct;
-    if (useScoreTiebreak && (b.score ?? -1) !== (a.score ?? -1)) return (b.score ?? -1) - (a.score ?? -1);
+    if ((b.score ?? -1) !== (a.score ?? -1)) return (b.score ?? -1) - (a.score ?? -1);
     return a.order - b.order;
+  });
+  const tieGroups = new Map();
+  arr.forEach((s) => {
+    const key = String(s.correct ?? 0);
+    tieGroups.set(key, [...(tieGroups.get(key) || []), s]);
+  });
+  const bonusByCanon = new Map();
+  tieGroups.forEach((group) => {
+    group.forEach((s, idx) => bonusByCanon.set(s.canon, speedTieBonus(idx, group.length)));
   });
   return arr.map((s, idx) => ({
     ...s,
     rank: idx + 1,
-    points: idx < PTS.length ? PTS[idx] : PTS_PART,
+    basePoints: (s.correct || 0) * POINTS_PER_CORRECT,
+    speedBonus: bonusByCanon.get(s.canon) || 0,
+    points: (s.correct || 0) * POINTS_PER_CORRECT + (bonusByCanon.get(s.canon) || 0),
   }));
 }
 function buildConsolidated(exercises, aliases, excluded) {
@@ -799,16 +926,18 @@ function buildConsolidated(exercises, aliases, excluded) {
       const e =
         map.get(s.canon) || { canon: s.canon, points: 0, score: 0, correct: 0, total: 0, played: 0, detail: [] };
       e.points += s.points;
+      e.basePoints = (e.basePoints || 0) + (s.basePoints || 0);
+      e.speedBonus = (e.speedBonus || 0) + (s.speedBonus || 0);
       e.score += s.score || 0;
       e.correct += s.correct;
       e.total += s.total;
       e.played += 1;
-      e.detail.push({ exId: ex.id, title: ex.title, rank: s.rank, points: s.points, correct: s.correct, total: s.total, score: s.score });
+      e.detail.push({ exId: ex.id, title: ex.title, rank: s.rank, points: s.points, basePoints: s.basePoints, speedBonus: s.speedBonus, correct: s.correct, total: s.total, score: s.score });
       map.set(s.canon, e);
     }
   }
   const arr = [...map.values()];
-  arr.sort((a, b) => b.points - a.points || b.score - a.score || b.correct - a.correct);
+  arr.sort((a, b) => b.correct - a.correct || b.points - a.points || (b.score || 0) - (a.score || 0) || a.canon.localeCompare(b.canon, "es"));
   return arr.map((s, i) => ({ ...s, rank: i + 1 }));
 }
 function activeRouteBlocks(route) {
@@ -932,19 +1061,24 @@ function questionStats(ex) {
     return { q, ok, bad, total: ok + bad };
   });
 }
+function formatChampionshipPoints(value) {
+  const n = Number(value || 0);
+  return Number.isInteger(n) ? String(n) : n.toFixed(2).replace(/\.?0+$/, "");
+}
 function displayOf(s, consolidated) {
-  // El número protagonista SIEMPRE son los puntos de campeonato (definen el puesto).
-  // El puntaje Wordwall y los aciertos van como apoyo, para explicar el porqué del orden.
   if (consolidated) {
     const parts = [];
     if (s.played != null) parts.push(`${s.played} juego${s.played === 1 ? "" : "s"}`);
     parts.push(`${s.correct}/${s.total} aciertos`);
-    return { main: `${s.points}`, unit: "pts campeonato", sub: parts.join(" · ") };
+    if (s.speedBonus) parts.push(`+${formatChampionshipPoints(s.speedBonus)} desempate`);
+    if (s.score) parts.push(`${s.score} pts Wordwall`);
+    return { main: formatChampionshipPoints(s.points), unit: "pts campeonato", sub: parts.join(" · ") };
   }
   const parts = [];
   if (s.score != null) parts.push(`${s.score} pts Wordwall`);
   parts.push(`${s.correct}/${s.total} aciertos`);
-  return { main: `${s.points}`, unit: "pts campeonato", sub: parts.join(" · ") };
+  if (s.speedBonus) parts.push(`+${formatChampionshipPoints(s.speedBonus)} desempate`);
+  return { main: formatChampionshipPoints(s.points), unit: "pts campeonato", sub: parts.join(" · ") };
 }
 
 /* ================= Confetti ================= */
@@ -1179,41 +1313,37 @@ function ScoringInfo({ compact }) {
   return (
     <div className={`scoring ${compact ? "scoring--compact" : ""}`}>
       <button className="scoring-toggle" onClick={() => setOpen(!open)}>
-        <span>⚽ ¿Cómo funcionan los puntos de campeonato?</span>
+        <span>⚽ ¿Cómo se ordena el podio?</span>
         <span className={`chev ${open ? "chev--up" : ""}`}>▾</span>
       </button>
       {open && (
         <div className="scoring-body">
           <p>
-            Como en un Mundial, en <b>cada ejercicio</b> se reparten puntos según el puesto en que quedes.
-            Del 6º lugar en adelante, todos suman 2 puntos por participar. El <b>Consolidado</b> suma los
-            puntos de campeonato que cada persona obtuvo en todos los ejercicios para armar la tabla general.
+            En <b>cada ejercicio</b> los puntos campeonato salen del <b>primer intento</b>:
+            cada acierto vale <b>{POINTS_PER_CORRECT} puntos</b>. Si dos personas tienen los mismos aciertos,
+            Wordwall solo agrega un bono pequeño de desempate por rapidez.
           </p>
           <div className="scoring-grid">
             {[
-              ["🥇", "1er lugar", 10],
-              ["🥈", "2do lugar", 8],
-              ["🥉", "3er lugar", 6],
-              ["4️⃣", "4to lugar", 5],
-              ["5️⃣", "5to lugar", 4],
-              ["⚽", "6º en adelante", 2],
+              ["✔", "Cada acierto", `${POINTS_PER_CORRECT} pts`],
+              ["⚡", "Bono desempate", `0-${SPEED_TIEBREAKER_MAX} pts`],
+              ["🥇", "Orden del juego", "Aciertos primero"],
+              ["🏆", "Consolidado", "Suma total"],
             ].map(([ic, l, p]) => (
               <div key={l} className="scoring-item">
                 <span className="scoring-ic">{ic}</span>
                 <span className="scoring-l">{l}</span>
-                <span className="scoring-p">{p} pts</span>
+                <span className="scoring-p">{p}</span>
               </div>
             ))}
           </div>
           <p className="dim" style={{ fontSize: 12.5, marginTop: 4 }}>
-            <b>¿Cómo se decide el puesto en cada ejercicio?</b> Primero gana quien tiene <b>más aciertos</b>.
-            Si dos personas empatan en aciertos, el desempate lo define el <b>puntaje Wordwall</b>, que premia
-            con puntos extra a quien respondió más rápido. Así, más aciertos siempre significa mejor puesto.
+            El <b>Consolidado</b> ordena primero por aciertos acumulados del primer intento.
+            El bono de rapidez solo separa empates; no puede poner arriba a alguien con menos aciertos.
           </p>
           <p className="dim" style={{ fontSize: 12.5, marginTop: 8 }}>
-            <b>Ejemplo:</b> si dos personas hacen 6/7, sube quien tuvo mayor puntaje Wordwall (fue más rápida).
-            Pero alguien con 7/7 siempre irá por encima de alguien con 6/7, sin importar la rapidez. La
-            ubicación final en la tabla la definen los <b>puntos de campeonato</b> acumulados.
+            <b>Ejemplo:</b> 7/7 equivale a 7000 puntos base. 6/7 puede llegar como máximo a 6009 con desempate,
+            así que nunca supera a quien tuvo más aciertos.
           </p>
         </div>
       )}
@@ -1263,14 +1393,14 @@ function FullTable({ rows, consolidated, withScores, onStudent }) {
               </td>
               {consolidated ? (
                 <>
-                  <td className="td-champ"><span className="champ-pill">{s.points}</span></td>
+                  <td className="td-champ"><span className="champ-pill">{formatChampionshipPoints(s.points)}</span></td>
                   <td className="t-num">{s.played}</td>
                   <td className="t-num">{s.correct}/{s.total} <span className="dim">({pct(s.correct, s.total)}%)</span></td>
                   <td className="t-num dim">{s.score || "—"}</td>
                 </>
               ) : (
                 <>
-                  <td className="td-champ"><span className="champ-pill">{s.points}</span></td>
+                  <td className="td-champ"><span className="champ-pill">{formatChampionshipPoints(s.points)}</span></td>
                   {withScores && <td className="t-teal">{s.score ?? "—"}</td>}
                   <td className="t-num">{s.correct}/{s.total}</td>
                   <td>
@@ -1285,8 +1415,8 @@ function FullTable({ rows, consolidated, withScores, onStudent }) {
       </table>
       <div className="tbl-note">
         {consolidated
-          ? "El puesto se decide por los pts de campeonato acumulados. Toca un nombre para ver su detalle."
-          : "El puesto se decide por los pts de campeonato (10·8·6·5·4·2), asignados según el puntaje Wordwall. Toca un nombre para ver su detalle."}
+          ? "El puesto se decide por puntos campeonato, calculados desde los aciertos del primer intento. Toca un nombre para ver su detalle."
+          : "El puesto se decide por aciertos; Wordwall desempata cuando hay igualdad. Toca un nombre para ver su detalle."}
       </div>
     </div>
   );
@@ -1342,7 +1472,7 @@ function StudentModal({ canon, data, onClose }) {
         </div>
         {detail.cons && (
           <div className="consline">
-            <span className="t-gold">{detail.cons.points} pts de campeonato</span> · puesto {detail.cons.rank} · {detail.cons.correct}/{detail.cons.total} aciertos
+            <span className="t-gold">{formatChampionshipPoints(detail.cons.points)} pts de campeonato</span> · puesto {detail.cons.rank} · {detail.cons.correct}/{detail.cons.total} aciertos
             {detail.cons.score ? <span className="dim"> · {detail.cons.score} pts Wordwall acumulados</span> : ""}
           </div>
         )}
@@ -1351,7 +1481,7 @@ function StudentModal({ canon, data, onClose }) {
             <div className="modal-ex-head">
               {ex.title}
               <span className="dim">
-                {" "}— {st.score != null ? `${st.score} pts · ` : ""}{st.correct}/{st.total} · puesto {st.rank} · {st.points} pts campeonato
+                {" "}— {st.score != null ? `${st.score} pts · ` : ""}{st.correct}/{st.total} · puesto {st.rank} · {formatChampionshipPoints(st.points)} pts campeonato
               </span>
             </div>
             <div className="modal-qs">
@@ -1472,6 +1602,7 @@ function UsersAdmin({ data, persist, busy }) {
 /* ================= Admin: dashboard de aprendizaje ================= */
 function AdminDashboard({ data }) {
   const [filters, setFilters] = useState({ block: "actual", attendance: "all", audio: "all", game: "all", unlock: "all", risk: "all" });
+  const [alertToast, setAlertToast] = useState("");
   const rows = useMemo(() => dashboardRows(data), [data]);
   const blocks = useMemo(() => routeBlockStats(data), [data]);
   const activeBlocks = activeRouteBlocks(data.route || emptyRoute());
@@ -1518,6 +1649,37 @@ function AdminDashboard({ data }) {
   const unlockLabels = { all: "Todos", unlocked: "Disponible", locked: "Bloqueado" };
   const riskLabels = { all: "Todos", risk: "Requiere seguimiento", ok: "Al día" };
   const labelFor = (map, key) => map[key] || key;
+  const alertMessageFor = (r) => {
+    const firstName = (r.user.name || "").split(/\s+/)[0] || "hola";
+    const blockName = r.gate?.block?.title || "tu bloque actual";
+    const needs = [];
+    if (!r.profileComplete) needs.push("completar tu perfil");
+    if (!r.user.linkedCanon) needs.push("avisar al equipo si tu nombre de juego no coincide con tu perfil");
+    if (r.audioState === "pending") needs.push("escuchar el audio de acompanamiento");
+    if (r.gameState === "pending") needs.push("realizar el juego requerido");
+    if (r.gameState === "failed") needs.push("reforzar y aprobar el juego con minimo 80%");
+    if (r.unlockState === "locked") needs.push("cerrar el bloque anterior para desbloquear el siguiente");
+    if (!needs.length) needs.push("revisar tu avance");
+    return `Hola ${firstName}, te escribimos por tu preparacion EJE. En el bloque "${blockName}" tienes pendiente: ${needs.join(", ")}. Entra a la plataforma para continuar tu ruta.`;
+  };
+  const copyText = async (text, okMessage) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setAlertToast(okMessage);
+      setTimeout(() => setAlertToast(""), 2600);
+    } catch {
+      setAlertToast("No se pudo copiar automaticamente. Selecciona el texto desde la exportacion.");
+    }
+  };
+  const copyFilteredAlerts = () => {
+    const targets = filteredRows.filter((r) => r.riskState === "risk");
+    if (!targets.length) {
+      setAlertToast("No hay alertas en el filtro actual.");
+      setTimeout(() => setAlertToast(""), 2600);
+      return;
+    }
+    copyText(targets.map(alertMessageFor).join("\n\n---\n\n"), `${targets.length} alerta(s) copiadas.`);
+  };
 
   const exportDashboard = () => {
     const exportRows = filteredRows.map((r) => ({
@@ -1550,8 +1712,12 @@ function AdminDashboard({ data }) {
           <div className="dash-title">Dashboard de aprendizaje</div>
           <div className="dim">Monitorea registro, avance de ruta, resultados y personas que necesitan seguimiento.</div>
         </div>
-        <button className="btn btn--gold btn--sm" onClick={exportDashboard} disabled={!filteredRows.length}>Exportar Excel</button>
+        <div className="dash-actions">
+          <button className="btn btn--teal-o btn--sm" onClick={copyFilteredAlerts} disabled={!filteredRows.length}>Copiar alertas filtradas</button>
+          <button className="btn btn--gold btn--sm" onClick={exportDashboard} disabled={!filteredRows.length}>Exportar Excel</button>
+        </div>
       </div>
+      {alertToast && <div className="toast toast--ok">{alertToast}</div>}
 
       <div className="card dash-filters">
         <div className="dash-panel-head">
@@ -1689,6 +1855,7 @@ function AdminDashboard({ data }) {
                   <th>Audio</th>
                   <th>Juego</th>
                   <th>Acceso</th>
+                  <th>Alerta</th>
                   <th>Estado</th>
                 </tr>
               </thead>
@@ -1714,6 +1881,11 @@ function AdminDashboard({ data }) {
                     <td><span className={`mini-state mini-state--${r.audioState}`}>{labelFor(audioLabels, r.audioState)}</span></td>
                     <td><span className={`mini-state mini-state--${r.gameState}`}>{labelFor(gameLabels, r.gameState)}</span></td>
                     <td><span className={`mini-state mini-state--${r.unlockState}`}>{labelFor(unlockLabels, r.unlockState)}</span></td>
+                    <td>
+                      <button className="btn btn--ghost btn--sm" onClick={() => copyText(alertMessageFor(r), `Alerta de ${r.user.name} copiada.`)}>
+                        Copiar
+                      </button>
+                    </td>
                     <td><span className={`status-pill ${r.riskState === "risk" ? "status-pill--warn" : "status-pill--ok"}`}>{r.riskState === "risk" ? r.status : "Al día"}</span></td>
                   </tr>
                 ))}
@@ -1795,7 +1967,7 @@ function RouteEditor({ data, persist, busy }) {
   };
   const addResource = (bi, type) =>
     mark(() => setBlocks((prev) => prev.map((b, i) =>
-      i === bi ? { ...b, resources: [...(b.resources || []), { id: uid(), type, label: "", url: "", slide: "", exerciseId: "", passingPct: PASSING_PCT }] } : b
+      i === bi ? { ...b, resources: [...(b.resources || []), { id: uid(), type, label: "", url: "", embedUrl: "", slide: "", exerciseId: "", passingPct: PASSING_PCT }] } : b
     )));
   const setResField = (bi, ri, field, val) =>
     mark(() => setBlocks((prev) => prev.map((b, i) =>
@@ -1814,9 +1986,10 @@ function RouteEditor({ data, persist, busy }) {
       pptUrl: (b.pptUrl || "").trim(),
       audioUrl: (b.audioUrl || "").trim(),
       attendance: splitNames(b.attendanceText ?? b.attendance),
-      resources: (b.resources || []).filter((r) => (r.url || "").trim()).map((r) => ({
+      resources: (b.resources || []).filter((r) => (r.url || r.embedUrl || "").trim()).map((r) => ({
         ...r,
-        url: r.url.trim(),
+        url: (r.url || "").trim(),
+        embedUrl: (r.embedUrl || "").trim(),
         label: (r.label || "").trim(),
         slide: r.slide,
         exerciseId: r.exerciseId || "",
@@ -1914,6 +2087,7 @@ function RouteEditor({ data, persist, busy }) {
                     <input className="inp inp--slide" value={r.slide} onChange={(e) => setResField(bi, ri, "slide", e.target.value.replace(/\D/g, ""))} placeholder="Lám." title="Nº de lámina" />
                     {r.type === "game" && (
                       <>
+                        <input className="inp inp--sm res-edit-wide" value={r.embedUrl || ""} onChange={(e) => setResField(bi, ri, "embedUrl", e.target.value)} placeholder="HTML iframe o link embed de Wordwall" />
                         <select className="inp inp--sm" value={r.exerciseId || ""} onChange={(e) => setResField(bi, ri, "exerciseId", e.target.value)}>
                           <option value="">Vincular resultado Wordwall</option>
                           {data.exercises.map((ex) => <option key={ex.id} value={ex.id}>{ex.title}</option>)}
@@ -1949,8 +2123,10 @@ function RouteEditor({ data, persist, busy }) {
 /* ================= Editor de ejercicio (admin) ================= */
 function ExerciseEditor({ exercise, data, persist, busy, onClose }) {
   const [title, setTitle] = useState(exercise.title);
-  const [sortBy, setSortBy] = useState(exercise.sortBy || "score");
   const [students, setStudents] = useState(exercise.students.map((s) => ({ ...s })));
+  const [resultsUrl, setResultsUrl] = useState(exercise.resultsUrl || "");
+  const [urlBusy, setUrlBusy] = useState(false);
+  const [urlMsg, setUrlMsg] = useState(null);
   const [pasteOpen, setPasteOpen] = useState(false);
   const [pasteText, setPasteText] = useState("");
   const [newName, setNewName] = useState("");
@@ -1988,6 +2164,26 @@ function ExerciseEditor({ exercise, data, persist, busy, onClose }) {
     setPasteText("");
     setPasteOpen(false);
   };
+  const applyResultsUrl = async () => {
+    setUrlMsg(null);
+    if (!resultsUrl.trim()) {
+      setUrlMsg({ ok: false, t: "Pega primero el link de resultados de Wordwall." });
+      return;
+    }
+    setUrlBusy(true);
+    try {
+      const imported = await importWordwallResultsFromUrl(resultsUrl.trim());
+      const incoming = (imported.students || []).map((s) => ({ ...s }));
+      if (!incoming.length) throw new Error("No se encontraron participantes en ese link.");
+      const { students: merged, added, updated } = mergeStudents(students, incoming);
+      setStudents(merged);
+      setUrlMsg({ ok: true, t: `Resultados actualizados: ${added} nuevo(s), ${updated} actualizado(s).` });
+    } catch (e) {
+      setUrlMsg({ ok: false, t: e.message || "No se pudo actualizar desde ese link." });
+    } finally {
+      setUrlBusy(false);
+    }
+  };
   const save = async () => {
     const aliases = { ...data.aliases };
     for (const s of students) if (!aliases[norm(s.raw)]) aliases[norm(s.raw)] = String(s.raw).trim();
@@ -1998,7 +2194,7 @@ function ExerciseEditor({ exercise, data, persist, busy, onClose }) {
       total: toInt(s.total, 0),
     }));
     const exercises = data.exercises.map((e) =>
-      e.id === exercise.id ? { ...e, title: title.trim() || e.title, sortBy, students: cleaned } : e
+      e.id === exercise.id ? { ...e, title: title.trim() || e.title, sortBy: "score", resultsUrl: resultsUrl.trim(), students: cleaned } : e
     );
     await persist({ ...data, aliases, exercises });
     onClose();
@@ -2019,20 +2215,21 @@ function ExerciseEditor({ exercise, data, persist, busy, onClose }) {
           </div>
 
           <div>
-            <label className="lbl">Criterio de desempate</label>
-            <div className="seg">
-              <button className={`seg-btn ${sortBy === "score" ? "seg-btn--on" : ""}`} onClick={() => setSortBy("score")}>
-                Aciertos + desempate Wordwall
-              </button>
-              <button className={`seg-btn ${sortBy === "correct" ? "seg-btn--on" : ""}`} onClick={() => setSortBy("correct")}>
-                Solo aciertos
+            <label className="lbl">Link de resultados Wordwall</label>
+            <div className="link-sync-row">
+              <input className="inp" value={resultsUrl} onChange={(e) => setResultsUrl(e.target.value)} placeholder="Pega aqui el link de resultados de Wordwall" />
+              <button className="btn btn--teal-o btn--sm" onClick={applyResultsUrl} disabled={urlBusy || !resultsUrl.trim()}>
+                {urlBusy ? "Actualizando..." : "Actualizar desde link"}
               </button>
             </div>
+            {urlMsg && <div className={urlMsg.ok ? "ok-inline" : "warn-inline"}>{urlMsg.t}</div>}
             <div className="dim" style={{ fontSize: 12, marginTop: 6 }}>
-              {sortBy === "score"
-                ? "Gana quien tiene más aciertos; si empatan, decide el mayor puntaje Wordwall (rapidez)."
-                : "Gana quien tiene más aciertos; si empatan, se respeta el orden de participación."}
+              Si Wordwall no permite lectura automatica, usa el Excel o pega el detallado.
             </div>
+          </div>
+
+          <div className="ok-inline">
+            Regla de ranking: primero cuentan los aciertos del primer intento. Si hay empate, Wordwall desempata por rapidez; nunca supera a los aciertos.
           </div>
 
           <div>
@@ -2216,6 +2413,167 @@ function AttendanceAdmin({ data, busy, onSave }) {
 }
 
 /* ================= Panel de administración ================= */
+const QUESTION_STATUS = [
+  ["new", "Nueva"],
+  ["reviewed", "Revisada"],
+  ["answered", "Respondida"],
+  ["archived", "Archivada"],
+];
+const questionStatusLabel = (status) => QUESTION_STATUS.find(([k]) => k === status)?.[1] || "Nueva";
+
+function QuestionBox({ user, questions, onSubmit, onClose }) {
+  const [text, setText] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState(null);
+  const mine = (questions || []).filter((q) => q.userId === user.id).slice(0, 6);
+
+  const send = async () => {
+    setMsg(null);
+    if (text.trim().length < 8) {
+      setMsg({ ok: false, t: "Escribe una pregunta un poco mas completa." });
+      return;
+    }
+    setBusy(true);
+    try {
+      await onSubmit(text.trim());
+      setText("");
+      setMsg({ ok: true, t: "Pregunta enviada. El equipo la revisara." });
+    } catch (e) {
+      setMsg({ ok: false, t: "No se pudo enviar la pregunta. Intentalo de nuevo." });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="overlay" onClick={onClose}>
+      <div className="modal modal--mid" onClick={(e) => e.stopPropagation()}>
+        <div className="modal-head">
+          <div className="disp modal-title">BUZON DE PREGUNTAS</div>
+          <button className="btn btn--ghost btn--sm" onClick={onClose}>Cerrar</button>
+        </div>
+        <div className="stack">
+          <textarea
+            className="inp"
+            rows={5}
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            placeholder="Escribe tu pregunta para el equipo de acompanamiento"
+          />
+          {msg && <div className={msg.ok ? "ok-inline" : "warn-inline"}>{msg.t}</div>}
+          <button className="btn btn--gold" onClick={send} disabled={busy || !text.trim()}>
+            {busy ? "Enviando..." : "Enviar pregunta"}
+          </button>
+
+          <div className="question-history">
+            <div className="requirements-title">Mis preguntas recientes</div>
+            {mine.length === 0 ? (
+              <div className="empty empty--compact">Aun no has enviado preguntas.</div>
+            ) : (
+              mine.map((q) => (
+                <div key={q.id} className="question-item">
+                  <div className="question-item-head">
+                    <b>{questionStatusLabel(q.status)}</b>
+                    <small>{q.createdAt ? new Date(q.createdAt).toLocaleString("es-PE") : ""}</small>
+                  </div>
+                  <p>{q.question}</p>
+                  {q.answer ? <div className="question-answer">{q.answer}</div> : null}
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function QuestionsAdmin({ data, busy, onUpdate }) {
+  const [filter, setFilter] = useState("all");
+  const [query, setQuery] = useState("");
+  const [answers, setAnswers] = useState({});
+  const questions = data.questions || [];
+  const filtered = useMemo(() => {
+    const qn = norm(query);
+    return questions.filter((q) => {
+      if (filter !== "all" && q.status !== filter) return false;
+      if (!qn) return true;
+      return norm(`${q.userName} ${q.question} ${q.answer}`).includes(qn);
+    });
+  }, [questions, filter, query]);
+  const counts = useMemo(() => {
+    const base = { all: questions.length };
+    for (const [k] of QUESTION_STATUS) base[k] = questions.filter((q) => q.status === k).length;
+    return base;
+  }, [questions]);
+  const answerFor = (q) => answers[q.id] ?? q.answer ?? "";
+
+  return (
+    <div className="questions-admin">
+      <div className="card attendance-hero">
+        <div>
+          <div className="dash-eyebrow">Acompanamiento</div>
+          <div className="dash-title">Buzon de preguntas</div>
+          <div className="dim">Revisa preguntas generales, marca estados y deja una respuesta visible para el participante.</div>
+        </div>
+      </div>
+
+      <div className="card attendance-tools questions-tools">
+        <label className="filter-group">
+          <span>Estado</span>
+          <select className="inp" value={filter} onChange={(e) => setFilter(e.target.value)}>
+            <option value="all">Todas ({counts.all || 0})</option>
+            {QUESTION_STATUS.map(([k, t]) => <option key={k} value={k}>{t} ({counts[k] || 0})</option>)}
+          </select>
+        </label>
+        <label className="filter-group">
+          <span>Buscar</span>
+          <input className="inp" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Participante, pregunta o respuesta" />
+        </label>
+      </div>
+
+      <div className="questions-list">
+        {filtered.length === 0 ? (
+          <div className="empty empty--compact">No hay preguntas con ese filtro.</div>
+        ) : (
+          filtered.map((q) => (
+            <div key={q.id} className="card question-admin-row">
+              <div className="question-admin-top">
+                <span className="cell-person">
+                  <span className="avatar avatar--xs">{initials(q.userName || "?")}</span>
+                  <span className="cell-main">
+                    <b>{q.userName || "Participante"}</b>
+                    <small>{q.createdAt ? new Date(q.createdAt).toLocaleString("es-PE") : ""}</small>
+                  </span>
+                </span>
+                <select className="inp inp--sm" value={q.status || "new"} onChange={(e) => onUpdate(q.id, { status: e.target.value, answer: answerFor(q) })} disabled={busy}>
+                  {QUESTION_STATUS.map(([k, t]) => <option key={k} value={k}>{t}</option>)}
+                </select>
+              </div>
+              <p className="question-text">{q.question}</p>
+              <textarea
+                className="inp"
+                rows={3}
+                value={answerFor(q)}
+                onChange={(e) => setAnswers({ ...answers, [q.id]: e.target.value })}
+                placeholder="Respuesta visible para el participante"
+              />
+              <div className="row-actions">
+                <button className="btn btn--teal-o btn--sm" onClick={() => onUpdate(q.id, { answer: answerFor(q), status: answerFor(q).trim() ? "answered" : q.status })} disabled={busy}>
+                  Guardar respuesta
+                </button>
+                <button className="btn btn--ghost btn--sm" onClick={() => onUpdate(q.id, { status: "archived", answer: answerFor(q) })} disabled={busy}>
+                  Archivar
+                </button>
+              </div>
+            </div>
+          ))
+        )}
+      </div>
+    </div>
+  );
+}
+
 function AdminPanel({ data, setData, onExit }) {
   const [tab, setTab] = useState("dashboard");
   const [busy, setBusy] = useState(false);
@@ -2266,6 +2624,23 @@ function AdminPanel({ data, setData, onExit }) {
       setMsg({ ok: true, t: `Asistencia guardada: ${count} participante(s) marcado(s).` });
     } catch (e) {
       setMsg({ ok: false, t: "No se pudo guardar la asistencia. Revisa que la tabla session_attendance exista en Supabase." });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const saveQuestionUpdate = async (questionId, patch) => {
+    setBusy(true);
+    setMsg(null);
+    try {
+      const saved = await updateQuestionBox(questionId, patch);
+      setData((prev) => ({
+        ...prev,
+        questions: (prev.questions || []).map((q) => (q.id === questionId ? saved : q)),
+      }));
+      setMsg({ ok: true, t: "Pregunta actualizada." });
+    } catch (e) {
+      setMsg({ ok: false, t: "No se pudo guardar la pregunta. Revisa que la tabla question_box exista en Supabase." });
     } finally {
       setBusy(false);
     }
@@ -2381,6 +2756,7 @@ function AdminPanel({ data, setData, onExit }) {
           title: titleEdit.trim() || parsed.title || "Ejercicio sin título",
           date: new Date().toISOString(),
           sortBy: "score",
+          resultsUrl: "",
           students,
           questions: parsed.questions,
         };
@@ -2447,7 +2823,7 @@ function AdminPanel({ data, setData, onExit }) {
       </div>
 
       <div className="tabs">
-        {[["dashboard", "📊 Dashboard"], ["ruta", "🏟️ Ruta Formativa"], ["asistencia", "✅ Asistencia"], ["subir", "⬆ Subir resultados"], ["ejercicios", `📋 Ejercicios (${data.exercises.length})`], ["usuarios", `👥 Usuarios (${(data.users || []).length})`], ["participantes", "🏃 Participantes"], ["alias", "👤 Nombres y alias"], ["pin", "🔒 PIN"]].map(([k, t]) => (
+        {[["dashboard", "📊 Dashboard"], ["ruta", "🏟️ Ruta Formativa"], ["asistencia", "✅ Asistencia"], ["preguntas", `💬 Preguntas (${(data.questions || []).filter((q) => q.status !== "archived").length})`], ["subir", "⬆ Subir resultados"], ["ejercicios", `📋 Ejercicios (${data.exercises.length})`], ["usuarios", `👥 Usuarios (${(data.users || []).length})`], ["participantes", "🏃 Participantes"], ["alias", "👤 Nombres y alias"], ["pin", "🔒 PIN"]].map(([k, t]) => (
           <button key={k} className={`tab ${tab === k ? "tab--on" : ""}`} onClick={() => setTab(k)}>{t}</button>
         ))}
       </div>
@@ -2459,6 +2835,8 @@ function AdminPanel({ data, setData, onExit }) {
       {tab === "ruta" && <RouteEditor data={data} persist={persist} busy={busy} />}
 
       {tab === "asistencia" && <AttendanceAdmin data={data} busy={busy} onSave={saveAttendanceBlock} />}
+
+      {tab === "preguntas" && <QuestionsAdmin data={data} busy={busy} onUpdate={saveQuestionUpdate} />}
 
       {tab === "subir" && (
         <div className="stack">
@@ -2634,7 +3012,7 @@ function AdminPanel({ data, setData, onExit }) {
               <div>
                 <div className="ex-title">{ex.title}</div>
                 <div className="dim" style={{ fontSize: 13 }}>
-                  {ex.students.length} participantes · {(ex.questions || []).length} preguntas · orden por {ex.sortBy === "correct" ? "aciertos" : "aciertos (desempate Wordwall)"} · subido {new Date(ex.date).toLocaleDateString("es-PE")}
+                  {ex.students.length} participantes · {(ex.questions || []).length} preguntas · aciertos con desempate Wordwall · subido {new Date(ex.date).toLocaleDateString("es-PE")}
                 </div>
               </div>
               {confirmDelEx === ex.id ? (
@@ -3048,8 +3426,9 @@ function BlockModal({ block, status, progressBusy, onToggleComplete, onAudioProg
 
 function ContentViewer({ resource, onClose }) {
   const isVideo = resource.type === "video";
-  const src = isVideo ? youtubeEmbed(resource.url) : resource.url;
+  const src = isVideo ? youtubeEmbed(resource.url) : wordwallEmbedUrl(resource.embedUrl || resource.url) || resource.url;
   const label = resource.label || (isVideo ? "Video" : "Juego Wordwall");
+  const openUrl = resource.url || wordwallEmbedUrl(resource.embedUrl);
 
   return (
     <div className="overlay overlay--dark" onClick={onClose}>
@@ -3060,7 +3439,7 @@ function ContentViewer({ resource, onClose }) {
             {resource.slide ? <span className="dim"> · Lámina {resource.slide}</span> : null}
           </div>
           <div className="viewer-actions">
-            <a className="btn btn--gold btn--sm" href={resource.url} target="_blank" rel="noreferrer">Abrir en pestaña ↗</a>
+            <a className="btn btn--gold btn--sm" href={openUrl} target="_blank" rel="noreferrer">Abrir en pestaña ↗</a>
             <button className="btn btn--ghost btn--sm" onClick={onClose}>Cerrar ✕</button>
           </div>
         </div>
@@ -3073,7 +3452,7 @@ function ContentViewer({ resource, onClose }) {
             allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
           />
         </div>
-        <a className="btn btn--gold viewer-open-btn" href={resource.url} target="_blank" rel="noreferrer">
+        <a className="btn btn--gold viewer-open-btn" href={openUrl} target="_blank" rel="noreferrer">
           {isVideo ? "▶️" : "🎮"} Abrir {label} en pestaña nueva ↗
         </a>
         <div className="viewer-note dim">
@@ -3231,7 +3610,7 @@ function ProfileCard({ user, data, onClose, onLogout }) {
 
         {myStats ? (
           <div className="profile-stats">
-            <div className="pstat"><span className="pstat-n t-gold">{myStats.points}</span><span className="pstat-l">pts campeonato</span></div>
+            <div className="pstat"><span className="pstat-n t-gold">{formatChampionshipPoints(myStats.points)}</span><span className="pstat-l">pts campeonato</span></div>
             <div className="pstat"><span className="pstat-n">{myStats.rank}º</span><span className="pstat-l">en la tabla</span></div>
             <div className="pstat"><span className="pstat-n">{myStats.played}</span><span className="pstat-l">juego{myStats.played === 1 ? "" : "s"}</span></div>
             <div className="pstat"><span className="pstat-n">{myStats.correct}/{myStats.total}</span><span className="pstat-l">aciertos</span></div>
@@ -3277,6 +3656,7 @@ export default function App() {
   const [muted, setMuted] = useState(false);
   const [sessionUserId, setSessionUserId] = useState(null);
   const [showProfile, setShowProfile] = useState(false);
+  const [showQuestionBox, setShowQuestionBox] = useState(false);
   const [progressBusy, setProgressBusy] = useState(false);
 
   const sessionUser = data?.users?.find((u) => u.id === sessionUserId) || null;
@@ -3327,6 +3707,7 @@ export default function App() {
   const handleLogout = useCallback(async () => {
     setSessionUserId(null);
     setShowProfile(false);
+    setShowQuestionBox(false);
     setMode("ruta");
     const d = await loadAuthData();
     if (d) setData(d);
@@ -3373,6 +3754,12 @@ export default function App() {
       console.warn("audio progress:", e);
     }
   }, [sessionUserId, mergeProgressRow]);
+
+  const handleSubmitQuestion = useCallback(async (question) => {
+    if (!sessionUser) return;
+    const saved = await submitQuestion(sessionUser, question);
+    setData((prev) => ({ ...prev, questions: [saved, ...((prev?.questions || []).filter((q) => q.id !== saved.id))] }));
+  }, [sessionUser]);
 
   if (loading)
     return (
@@ -3460,6 +3847,9 @@ export default function App() {
             <button className={`mode-btn ${mode === "podio" ? "mode-btn--on" : ""}`} onClick={() => setMode("podio")}>
               🏆 Podio y Resultados
             </button>
+            <button className="mode-btn" onClick={() => setShowQuestionBox(true)}>
+              💬 Buzón de preguntas
+            </button>
           </div>
 
           {mode === "ruta" && (
@@ -3510,8 +3900,8 @@ export default function App() {
                       setMuted={setMuted}
                       subtitle={
                         consolidated
-                          ? "Clasificación general · puntos de campeonato"
-                          : `"${currentEx.title}"${currentEx.sortBy === "correct" ? " · orden por aciertos" : hasScores(currentEx) ? " · aciertos (desempate por puntaje Wordwall)" : " · orden por aciertos"}`
+                          ? "Clasificación general · puntos por aciertos del primer intento"
+                          : `"${currentEx.title}" · aciertos del primer intento${hasScores(currentEx) ? " · desempate por rapidez Wordwall" : ""}`
                       }
                     />
                   )}
@@ -3537,6 +3927,14 @@ export default function App() {
           data={data}
           onClose={() => setShowProfile(false)}
           onLogout={handleLogout}
+        />
+      )}
+      {showQuestionBox && sessionUser && (
+        <QuestionBox
+          user={sessionUser}
+          questions={data.questions || []}
+          onSubmit={handleSubmitQuestion}
+          onClose={() => setShowQuestionBox(false)}
         />
       )}
 
@@ -3944,6 +4342,7 @@ tr.row--top .champ-pill{box-shadow:0 4px 16px #FFC53155, inset 0 1px 0 #fff8}
 @keyframes fadeIn{from{opacity:0}to{opacity:1}}
 .modal{background:var(--bg1);border:1px solid var(--line2);border-radius:20px;max-width:680px;width:100%;
   max-height:88vh;overflow-y:auto;padding:24px;box-shadow:0 30px 90px #000000aa;animation:popUp .25s ease}
+.modal--mid{max-width:620px}
 .modal--wide{max-width:820px}
 @keyframes popUp{from{opacity:0;transform:translateY(16px) scale(.97)}to{opacity:1;transform:none}}
 .modal-head{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:16px;flex-wrap:wrap}
@@ -4098,6 +4497,7 @@ button:focus-visible,.inp:focus-visible{outline:2px solid var(--turf);outline-of
 /* ---------- Dashboard admin ---------- */
 .admin-dash{display:grid;gap:16px}
 .dash-hero{display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;border-color:var(--line2)}
+.dash-actions{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end}
 .dash-eyebrow{font-family:var(--mono);font-size:10px;font-weight:700;letter-spacing:1.5px;color:var(--turf);text-transform:uppercase}
 .dash-title{font-family:var(--disp);font-style:italic;text-transform:uppercase;font-size:28px;line-height:1.1;margin:3px 0}
 .dash-kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(135px,1fr));gap:9px}
@@ -4157,6 +4557,21 @@ button:focus-visible,.inp:focus-visible{outline:2px solid var(--turf);outline-of
 .attendance-person{display:flex;flex-direction:column;gap:2px;min-width:0}
 .attendance-person b{font-size:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .attendance-person small{color:var(--dim);font-size:11.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
+/* ---------- Preguntas + Wordwall ---------- */
+.res-edit-wide{min-width:260px;flex:1.4}
+.link-sync-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:10px;align-items:center}
+.questions-admin{display:grid;gap:16px}
+.questions-tools{grid-template-columns:minmax(180px,.7fr) minmax(220px,1.4fr)}
+.questions-list{display:grid;gap:12px}
+.question-admin-row{display:grid;gap:12px}
+.question-admin-top{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.question-text{margin:0;color:var(--text);font-weight:700}
+.question-history{display:grid;gap:8px;margin-top:8px}
+.question-item{border:1px solid var(--line);border-radius:12px;background:var(--bg0);padding:10px 12px}
+.question-item-head{display:flex;align-items:center;justify-content:space-between;gap:10px;color:var(--dim);font-size:12px}
+.question-item p{margin:6px 0 0;color:var(--text)}
+.question-answer{margin-top:8px;border-left:3px solid var(--turf);padding:8px 10px;background:#16DB9310;border-radius:8px;color:var(--silver2)}
 
 /* ---------- Switch de modo Ruta / Podio ---------- */
 .mode-switch{display:flex;gap:8px;justify-content:center;margin-bottom:22px;flex-wrap:wrap}
@@ -4349,7 +4764,7 @@ button:focus-visible,.inp:focus-visible{outline:2px solid var(--turf);outline-of
   .dash-kpis{grid-template-columns:repeat(2,1fr)}
   .dash-grid{grid-template-columns:1fr}
   .dash-title{font-size:24px}
-  .dash-table{min-width:720px}
+  .dash-table{min-width:820px}
   .attendance-tools{grid-template-columns:1fr}
   .attendance-actions{justify-content:flex-start}
   .attendance-summary{grid-template-columns:1fr}
