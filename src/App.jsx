@@ -79,6 +79,31 @@ const DEFAULT_ASCOS_TYPES = [
   { id: "concreto", name: "El Tipo Concreto", guide: "Aterriza el tema con hechos y experiencias." },
   { id: "positivo", name: "El Hombre Positivo", guide: "Encuentra el lado bueno y defiende a los más débiles." },
 ];
+const DEFAULT_APOYO_EXTERNO_RESOURCES = [
+  {
+    id: "apoyo_externo_quiz_html",
+    type: "html",
+    label: "Quiz - Apoyo Externo",
+    url: "/apoyo_externo_quiz.html",
+    note: "Juego HTML cargado como práctica editable desde administración.",
+  },
+];
+const DEFAULT_APOYO_INTERNO_RESOURCES = [
+  { id: "mat_recepcion", type: "materials", time: "Sábado 8:00", label: "Recepción", materials: "Mesitas, sillas, alfileres, solapines, listas, hojas de bienvenida, afiche Bienvenidos a EJE y música de recepción." },
+  { id: "mat_ingreso", type: "materials", time: "Sábado 8:55", label: "Ingreso al salón", materials: "Afiches de bienvenida, escudo de EJE y música de entrada." },
+  { id: "mat_presentacion", type: "materials", time: "Sábado 9:00", label: "Presentación", materials: "Cartulinas para solapines, lapiceros, plumones, hojas de resma, alfileres, clips, lanas y crayolas." },
+  { id: "mat_reglas", type: "materials", time: "Sábado 10:05", label: "Reglas y normas", materials: "Sobres para recoger relojes y maletín con llave." },
+  { id: "mat_amigo_secreto", type: "materials", time: "Sábado 10:20", label: "Amigo secreto", materials: "Dos canastas, papelitos, lapiceros y música indicada para la dinámica." },
+  { id: "mat_juegos", type: "materials", time: "Sábado 3:05", label: "Cuáles son mis juegos", materials: "Volante de Juegos y lectura o grabación del volante." },
+  { id: "mat_mimo", type: "materials", time: "Sábado 4:55", label: "Mimo: La Caja", materials: "Hojita de difícil compartir y música indicada." },
+  { id: "mat_agape", type: "materials", time: "Sábado 7:00", label: "Ágape", materials: "Adornos, cadenetas, velas en cada mesa, aparatos de audio, Biblia Lc 24, 13-34 y música indicada." },
+  { id: "mat_alegria", type: "materials", time: "Sábado 7:45", label: "Hora de la alegría", materials: "Sociodramas, cantos de animación, diapositivas o película indicada." },
+  { id: "mat_confianza", type: "materials", time: "Sábado 8:45", label: "Confianza", materials: "Itinerario, obstáculos, lugar preparado para la celebración y música indicada." },
+  { id: "mat_perdon", type: "materials", time: "Sábado 9:15", label: "Celebración del perdón", materials: "Cirio grande, velas, cruz, alfileres, papel de seda, lapiceros, tablitas, fósforos, cancioneros, hojitas de celebración y música indicada." },
+  { id: "mat_oracion", type: "materials", time: "Domingo 9:40", label: "Poder de la oración y carta de amor", materials: "Pescaditos y cartas para entregar a asesores de grupo al final del poder de la oración." },
+  { id: "mat_mundo", type: "materials", time: "Domingo 12:00", label: "Podemos cambiar el mundo", materials: "Música Sueño Imposible, Vamos con alegría, Id y Enseñad, y materiales definidos por coordinación." },
+  { id: "mat_clausura", type: "materials", time: "Domingo 1:30", label: "Eucaristía de clausura", materials: "Altar preparado, lecturas coordinadas con el director espiritual y materiales litúrgicos necesarios." },
+];
 const toInt = (v, d = 0) => {
   const n = parseInt(v, 10);
   return Number.isFinite(n) ? n : d;
@@ -510,8 +535,8 @@ function emptyRoleplay() {
   return {
     participantTypes: DEFAULT_ASCOS_TYPES.map((t) => ({ ...t })),
     asesor: emptyRoleResources(),
-    apoyo_interno: emptyRoleResources(),
-    apoyo_externo: emptyRoleResources(),
+    apoyo_interno: { resources: DEFAULT_APOYO_INTERNO_RESOURCES.map((r) => ({ ...r })) },
+    apoyo_externo: { resources: DEFAULT_APOYO_EXTERNO_RESOURCES.map((r) => ({ ...r })) },
     coordinador: emptyRoleResources(),
   };
 }
@@ -528,15 +553,24 @@ function normalizeRoleplay(raw) {
     : base.participantTypes;
   for (const role of ROLEPLAY_ROLES) {
     const roleCfg = cfg[role.key] && typeof cfg[role.key] === "object" ? cfg[role.key] : {};
+    const rawResources = safeJsonArray(roleCfg.resources);
+    const defaultResources = base[role.key]?.resources || [];
+    const missingDefaults = defaultResources.filter((d) =>
+      !rawResources.some((r) => r.id === d.id || (r.url && d.url && r.url === d.url))
+    );
+    const resourcesSource = [...missingDefaults, ...rawResources];
     next[role.key] = {
       ...base[role.key],
       ...roleCfg,
-      resources: safeJsonArray(roleCfg.resources).map((r) => ({
+      resources: resourcesSource.map((r) => ({
         id: r.id || uid(),
         type: r.type || (role.key === "coordinador" ? "file" : "wordwall"),
         label: String(r.label || "").trim(),
         url: String(r.url || "").trim(),
         note: String(r.note || "").trim(),
+        time: String(r.time || "").trim(),
+        materials: String(r.materials || "").trim(),
+        html: String(r.html || "").trim(),
       })).filter((r) => r.label || r.url),
     };
   }
@@ -2848,7 +2882,7 @@ function RoleplayAdmin({ data, persist, busy }) {
     ...prev,
     [roleKey]: {
       ...prev[roleKey],
-      resources: [...(prev[roleKey]?.resources || []), { id: uid(), type, label: "", url: "", note: "" }],
+      resources: [...(prev[roleKey]?.resources || []), { id: uid(), type, label: "", url: "", note: "", time: "", materials: "" }],
     },
   })));
   const setResourceField = (roleKey, idx, field, value) => mark(() => setLocal((prev) => ({
@@ -2897,21 +2931,39 @@ function RoleplayAdmin({ data, persist, busy }) {
     setLocal(cleaned);
     setDirty(false);
   };
+  const typeOptionsFor = (roleKey) => {
+    if (roleKey === "coordinador") return [["file", "PDF"], ["audio", "Audio"]];
+    if (roleKey === "apoyo_interno") return [["materials", "Momento/materiales"], ["wordwall", "Wordwall"]];
+    if (roleKey === "apoyo_externo") return [["html", "Juego HTML"], ["wordwall", "Wordwall"]];
+    return [["wordwall", "Wordwall"]];
+  };
+  const typeName = (type) => ({
+    audio: "Audio",
+    file: "PDF",
+    html: "Juego HTML",
+    materials: "Materiales",
+    wordwall: "Wordwall",
+  }[type] || "Recurso");
   const renderResourceRows = (roleKey) => {
     const resources = local[roleKey]?.resources || [];
+    const typeOptions = typeOptionsFor(roleKey);
     return (
       <div className="role-resource-list">
         {resources.length === 0 && <div className="empty empty--compact">Todavía no hay recursos para este rol.</div>}
         {resources.map((r, idx) => (
           <div key={r.id} className="role-resource-row">
-            {roleKey === "coordinador" && (
+            {typeOptions.length > 1 ? (
               <select className="inp inp--sm" value={r.type} onChange={(e) => setResourceField(roleKey, idx, "type", e.target.value)}>
-                <option value="file">PDF</option>
-                <option value="audio">Audio</option>
+                {typeOptions.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
               </select>
+            ) : <span className="mini-state">{typeName(r.type)}</span>}
+            {r.type === "materials" && (
+              <input className="inp inp--sm inp--time" value={r.time || ""} onChange={(e) => setResourceField(roleKey, idx, "time", e.target.value)} placeholder="Momento / hora" />
             )}
             <input className="inp inp--sm" value={r.label} onChange={(e) => setResourceField(roleKey, idx, "label", e.target.value)} placeholder="Nombre visible" />
-            <input className="inp inp--sm role-resource-url" value={r.url} onChange={(e) => setResourceField(roleKey, idx, "url", e.target.value)} placeholder={r.type === "wordwall" ? "Link de Wordwall" : "Link o archivo subido"} />
+            {r.type !== "materials" && (
+              <input className="inp inp--sm role-resource-url" value={r.url} onChange={(e) => setResourceField(roleKey, idx, "url", e.target.value)} placeholder={r.type === "html" ? "Ruta del HTML, ej. /apoyo_externo_quiz.html" : r.type === "wordwall" ? "Link de Wordwall" : "Link o archivo subido"} />
+            )}
             {roleKey === "coordinador" && (
               <label className="btn btn--teal-o btn--sm ppt-upload-btn">
                 {uploading === `${roleKey}-${idx}` ? "Subiendo..." : r.type === "audio" ? "Subir audio" : "Subir PDF"}
@@ -2924,7 +2976,11 @@ function RoleplayAdmin({ data, persist, busy }) {
                 />
               </label>
             )}
-            <input className="inp inp--sm" value={r.note || ""} onChange={(e) => setResourceField(roleKey, idx, "note", e.target.value)} placeholder="Nota breve opcional" />
+            {r.type === "materials" ? (
+              <input className="inp inp--sm role-resource-url" value={r.materials || ""} onChange={(e) => setResourceField(roleKey, idx, "materials", e.target.value)} placeholder="Materiales necesarios" />
+            ) : (
+              <input className="inp inp--sm" value={r.note || ""} onChange={(e) => setResourceField(roleKey, idx, "note", e.target.value)} placeholder="Nota breve opcional" />
+            )}
             <button className="icon-btn" title="Quitar recurso" onClick={() => removeResource(roleKey, idx)}>✕</button>
           </div>
         ))}
@@ -3000,7 +3056,10 @@ function RoleplayAdmin({ data, persist, busy }) {
               <div className="dash-panel-title">Apoyo interno</div>
               <div className="dim">Juegos prácticos de Wordwall.</div>
             </div>
-            <button className="btn btn--teal-o btn--sm" onClick={() => addResource("apoyo_interno", "wordwall")}>+ Juego</button>
+            <div className="row-actions">
+              <button className="btn btn--teal-o btn--sm" onClick={() => addResource("apoyo_interno", "materials")}>+ Momento/materiales</button>
+              <button className="btn btn--teal-o btn--sm" onClick={() => addResource("apoyo_interno", "wordwall")}>+ Juego</button>
+            </div>
           </div>
           {renderResourceRows("apoyo_interno")}
         </div>
@@ -3010,7 +3069,10 @@ function RoleplayAdmin({ data, persist, busy }) {
               <div className="dash-panel-title">Apoyo externo</div>
               <div className="dim">Juegos prácticos de Wordwall.</div>
             </div>
-            <button className="btn btn--teal-o btn--sm" onClick={() => addResource("apoyo_externo", "wordwall")}>+ Juego</button>
+            <div className="row-actions">
+              <button className="btn btn--teal-o btn--sm" onClick={() => addResource("apoyo_externo", "html")}>+ Juego HTML</button>
+              <button className="btn btn--teal-o btn--sm" onClick={() => addResource("apoyo_externo", "wordwall")}>+ Wordwall</button>
+            </div>
           </div>
           {renderResourceRows("apoyo_externo")}
         </div>
@@ -4089,12 +4151,18 @@ function RoleplayHub({ data, setData, sessionUser }) {
         {resources.map((r) => (
           <div key={r.id} className={`card role-user-resource role-user-resource--${r.type}`}>
             <div>
-              <div className="role-resource-type">{r.type === "audio" ? "Audio" : r.type === "file" ? "PDF" : "Wordwall"}</div>
+              <div className="role-resource-type">{r.type === "audio" ? "Audio" : r.type === "file" ? "PDF" : r.type === "html" ? "Juego HTML" : r.type === "materials" ? "Materiales" : "Wordwall"}</div>
               <div className="role-resource-title">{r.label || "Recurso"}</div>
+              {r.time && <div className="role-resource-time">{r.time}</div>}
+              {r.materials && <div className="dim" style={{ fontSize: 13 }}>{r.materials}</div>}
               {r.note && <div className="dim" style={{ fontSize: 13 }}>{r.note}</div>}
             </div>
             {r.type === "audio" ? (
               <audio controls src={r.url} onPlay={() => recordUse(roleKey, r.id, "play")} />
+            ) : r.type === "materials" ? (
+              <button className="btn btn--teal-o btn--sm" onClick={() => recordUse(roleKey, r.id, "review")}>
+                Revisado
+              </button>
             ) : (
               <a className="btn btn--gold btn--sm" href={r.url} target="_blank" rel="noreferrer" onClick={() => recordUse(roleKey, r.id, "open")}>
                 Abrir
@@ -5512,10 +5580,12 @@ button:focus-visible,.inp:focus-visible{outline:2px solid var(--turf);outline-of
 .ascos-edit-row,.role-resource-row{display:flex;align-items:center;gap:8px;background:var(--bg0);border:1px solid var(--line);border-radius:10px;padding:8px;flex-wrap:wrap}
 .ascos-guide{flex:1;min-width:260px}
 .role-resource-url{flex:1;min-width:240px}
+.inp--time{width:150px;flex:none}
 .role-resource-cards{display:grid;gap:10px}
 .role-user-resource{display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap}
 .role-user-resource audio{min-width:260px;max-width:100%}
 .role-resource-type{font-family:var(--mono);font-size:11px;text-transform:uppercase;letter-spacing:1.4px;color:var(--turf);font-weight:900}
+.role-resource-time{font-family:var(--mono);font-size:12px;color:var(--gold);font-weight:900;margin-top:2px}
 .role-resource-title{font-size:17px;font-weight:900}
 .role-usage-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}
 .role-usage-card{background:var(--bg0);border:1px solid var(--line);border-radius:10px;padding:12px;display:grid;gap:5px}
