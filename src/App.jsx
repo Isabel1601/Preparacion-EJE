@@ -2,8 +2,6 @@ import React, { useState, useEffect, useRef, useMemo, useCallback } from "react"
 import * as XLSX from "xlsx";
 
 /* ================= Config ================= */
-const POINTS_PER_CORRECT = 1000;
-const SPEED_TIEBREAKER_MAX = 9;
 const PASSING_PCT = 80;
 const AUDIO_COMPLETE_PCT = 85;
 const REDUCED =
@@ -61,6 +59,26 @@ const ACCESS_PHRASE_KEY = "firmes en la fe sobre la roca";
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
 const pct = (c, t) => (t ? Math.round((c / t) * 100) : 0);
 const hasMeaningfulAnswer = (s) => phraseKey(s).replace(/[^a-z0-9]/g, "").length >= 2;
+const ROLEPLAY_ROLES = [
+  { key: "asesor", label: "Asesor", hint: "Crea sesiones de práctica con código y asignación de casos." },
+  { key: "apoyo_interno", label: "Apoyo interno", hint: "Practica con juegos asignados por administración." },
+  { key: "apoyo_externo", label: "Apoyo externo", hint: "Practica con juegos asignados por administración." },
+  { key: "coordinador", label: "Coordinador", hint: "Consulta PDFs y audios necesarios para el retiro." },
+];
+const DEFAULT_ASCOS_TYPES = [
+  { id: "pregunton", name: "El Preguntón Eterno", guide: "Solo quiere hacerse notar." },
+  { id: "cabeza_dura", name: "El Cabeza Dura", guide: "No entiende razones y no quiere aprender de otros." },
+  { id: "timido", name: "El Tímido", guide: "Tiene ideas, pero le cuesta decirlas." },
+  { id: "mudo_voluntario", name: "El Mudo Voluntario", guide: "No participa por aburrimiento, inseguridad o actitud distante." },
+  { id: "charlatan", name: "El Charlatán", guide: "Habla todo el tiempo y se sale del tema." },
+  { id: "distraido", name: "El Distraído", guide: "Salta de un tema a otro y desvía al grupo." },
+  { id: "detallista", name: "El Detallista", guide: "Se enreda en detalles y frena el avance." },
+  { id: "gran_tipo", name: "El Gran Tipo", guide: "Siempre quiere ayudar y está dispuesto a escuchar." },
+  { id: "profundo", name: "El Calahondo o Profundo", guide: "Habla poco, pero va directo a lo central." },
+  { id: "buen_humor", name: "El de Buen Humor", guide: "Ayuda a aliviar tensiones con optimismo." },
+  { id: "concreto", name: "El Tipo Concreto", guide: "Aterriza el tema con hechos y experiencias." },
+  { id: "positivo", name: "El Hombre Positivo", guide: "Encuentra el lado bueno y defiende a los más débiles." },
+];
 const toInt = (v, d = 0) => {
   const n = parseInt(v, 10);
   return Number.isFinite(n) ? n : d;
@@ -126,6 +144,47 @@ function mapQuestions(questionRows = []) {
   }));
 }
 
+function safeJsonArray(value) {
+  if (Array.isArray(value)) return value;
+  if (!value) return [];
+  if (typeof value === "string") {
+    try {
+      const parsed = JSON.parse(value);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  }
+  return [];
+}
+
+function mapRoleplaySessions(sessionRows = []) {
+  return (sessionRows || []).map((s) => ({
+    id: s.id,
+    code: s.code || "",
+    roleType: s.role_type || "asesor",
+    ownerUserId: s.owner_user_id || "",
+    ownerName: s.owner_name || "",
+    status: s.status || "open",
+    participants: safeJsonArray(s.participants),
+    createdAt: s.created_at || "",
+    updatedAt: s.updated_at || "",
+  }));
+}
+
+function mapRoleplayEvents(eventRows = []) {
+  return (eventRows || []).map((e) => ({
+    id: e.id,
+    userId: e.user_id || "",
+    userName: e.user_name || "",
+    roleType: e.role_type || "",
+    resourceId: e.resource_id || "",
+    sessionId: e.session_id || "",
+    eventType: e.event_type || "open",
+    createdAt: e.created_at || "",
+  }));
+}
+
 async function loadProgress() {
   try {
     const rows = await sbFetch("route_progress?select=*&order=updated_at.desc");
@@ -152,6 +211,26 @@ async function loadQuestions() {
     return mapQuestions(rows);
   } catch (e) {
     console.warn("loadQuestions Supabase:", e);
+    return [];
+  }
+}
+
+async function loadRoleplaySessions() {
+  try {
+    const rows = await sbFetch("roleplay_sessions?select=*&order=created_at.desc");
+    return mapRoleplaySessions(rows);
+  } catch (e) {
+    console.warn("loadRoleplaySessions Supabase:", e);
+    return [];
+  }
+}
+
+async function loadRoleplayEvents() {
+  try {
+    const rows = await sbFetch("roleplay_events?select=*&order=created_at.desc");
+    return mapRoleplayEvents(rows);
+  } catch (e) {
+    console.warn("loadRoleplayEvents Supabase:", e);
     return [];
   }
 }
@@ -234,10 +313,49 @@ async function updateQuestionBox(id, patch = {}) {
   return mapQuestions(saved)[0];
 }
 
+async function saveRoleplaySession(session) {
+  const now = new Date().toISOString();
+  const row = {
+    id: session.id || uid(),
+    code: String(session.code || "").trim().toUpperCase(),
+    role_type: session.roleType || "asesor",
+    owner_user_id: session.ownerUserId || null,
+    owner_name: session.ownerName || null,
+    status: session.status || "open",
+    participants: session.participants || [],
+    updated_at: now,
+  };
+  const saved = await sbFetch("roleplay_sessions?on_conflict=id", {
+    method: "POST",
+    headers: { Prefer: "resolution=merge-duplicates,return=representation" },
+    body: JSON.stringify(row),
+  });
+  return mapRoleplaySessions(saved)[0] || mapRoleplaySessions([row])[0];
+}
+
+async function recordRoleplayEvent(user, roleType, resourceId = "", eventType = "open", sessionId = "") {
+  const row = {
+    id: uid(),
+    user_id: user?.id || null,
+    user_name: user?.name || "",
+    role_type: roleType || "",
+    resource_id: resourceId || null,
+    session_id: sessionId || null,
+    event_type: eventType || "open",
+    created_at: new Date().toISOString(),
+  };
+  const saved = await sbFetch("roleplay_events", {
+    method: "POST",
+    headers: { Prefer: "return=representation" },
+    body: JSON.stringify(row),
+  });
+  return mapRoleplayEvents(saved)[0] || mapRoleplayEvents([row])[0];
+}
+
 /* ===== Carga: arma el objeto 'data' leyendo las 4 tablas ===== */
 async function loadData() {
   try {
-    const [configRows, routeRows, exRows, userRows, progress, attendance, questions] = await Promise.all([
+    const [configRows, routeRows, exRows, userRows, progress, attendance, questions, roleplaySessions, roleplayEvents] = await Promise.all([
       sbFetch("config?id=eq.main&select=data"),
       sbFetch("route?id=eq.main&select=data"),
       sbFetch("exercises?select=id,data&order=created_at.asc"),
@@ -245,6 +363,8 @@ async function loadData() {
       loadProgress(),
       loadAttendance(),
       loadQuestions(),
+      loadRoleplaySessions(),
+      loadRoleplayEvents(),
     ]);
     const config = (configRows && configRows[0] && configRows[0].data) || {};
     const route = (routeRows && routeRows[0] && routeRows[0].data) || emptyRoute();
@@ -260,6 +380,9 @@ async function loadData() {
       progress,
       attendance,
       questions,
+      roleplay: normalizeRoleplay(config.roleplay),
+      roleplaySessions,
+      roleplayEvents,
     };
   } catch (e) {
     console.error("loadData Supabase:", e);
@@ -294,7 +417,8 @@ async function saveData(next, prev) {
 
   // config (pin, aliases, excluded)
   const cfgNext = { pin: next.pin ?? null, aliases: next.aliases || {}, excluded: next.excluded || [] };
-  const cfgPrev = { pin: p.pin ?? null, aliases: p.aliases || {}, excluded: p.excluded || [] };
+  cfgNext.roleplay = normalizeRoleplay(next.roleplay);
+  const cfgPrev = { pin: p.pin ?? null, aliases: p.aliases || {}, excluded: p.excluded || [], roleplay: normalizeRoleplay(p.roleplay) };
   if (JSON.stringify(cfgNext) !== JSON.stringify(cfgPrev)) {
     jobs.push(sbFetch("config?id=eq.main", {
       method: "PATCH",
@@ -361,12 +485,63 @@ async function saveData(next, prev) {
   await Promise.all(jobs);
   return next;
 }
-const emptyData = () => ({ pin: null, aliases: {}, exercises: [], excluded: [], route: emptyRoute(), users: [], progress: [], attendance: [], questions: [] });
+const emptyData = () => ({
+  pin: null,
+  aliases: {},
+  exercises: [],
+  excluded: [],
+  route: emptyRoute(),
+  users: [],
+  progress: [],
+  attendance: [],
+  questions: [],
+  roleplay: emptyRoleplay(),
+  roleplaySessions: [],
+  roleplayEvents: [],
+});
 const emptyRoute = () => ({ title: "Ruta de Preparación", blocks: [] });
 /* Un bloque de la ruta formativa:
    { id, title, subtitle, pptUrl, resources: [ { id, type: 'game'|'video', label, url, slide } ] }
    slide = número de lámina donde aparece el recurso (opcional, informativo) */
 const emptyBlock = () => ({ id: uid(), title: "", subtitle: "", pptUrl: "", resources: [], locked: false });
+
+const emptyRoleResources = () => ({ resources: [] });
+function emptyRoleplay() {
+  return {
+    participantTypes: DEFAULT_ASCOS_TYPES.map((t) => ({ ...t })),
+    asesor: emptyRoleResources(),
+    apoyo_interno: emptyRoleResources(),
+    apoyo_externo: emptyRoleResources(),
+    coordinador: emptyRoleResources(),
+  };
+}
+function normalizeRoleplay(raw) {
+  const base = emptyRoleplay();
+  const cfg = raw && typeof raw === "object" ? raw : {};
+  const next = { ...base, ...cfg };
+  next.participantTypes = safeJsonArray(cfg.participantTypes).length
+    ? safeJsonArray(cfg.participantTypes).map((t) => ({
+      id: t.id || uid(),
+      name: String(t.name || "").trim(),
+      guide: String(t.guide || "").trim(),
+    })).filter((t) => t.name)
+    : base.participantTypes;
+  for (const role of ROLEPLAY_ROLES) {
+    const roleCfg = cfg[role.key] && typeof cfg[role.key] === "object" ? cfg[role.key] : {};
+    next[role.key] = {
+      ...base[role.key],
+      ...roleCfg,
+      resources: safeJsonArray(roleCfg.resources).map((r) => ({
+        id: r.id || uid(),
+        type: r.type || (role.key === "coordinador" ? "file" : "wordwall"),
+        label: String(r.label || "").trim(),
+        url: String(r.url || "").trim(),
+        note: String(r.note || "").trim(),
+      })).filter((r) => r.label || r.url),
+    };
+  }
+  return next;
+}
 
 /* ====== Usuarios (perfil de participante) ======
    { id, name, passHash, birthdate, retreatDate, expectations, linkedCanon }
@@ -852,7 +1027,7 @@ function earliestAttemptSnapshot(a, b) {
   return attemptSnapshot(isEarlierAttempt(b, a) ? b : a);
 }
 /* Decide si el intento 'b' es mejor que 'a' para conservar al fusionar/deduplicar.
-   Prioriza: más aciertos > mayor puntaje Wordwall > intento más reciente. */
+   Prioriza: más aciertos > desempate Wordwall > intento más reciente. */
 function isBetterAttempt(b, a) {
   if (!a) return true;
   if ((b.correct ?? 0) !== (a.correct ?? 0)) return (b.correct ?? 0) > (a.correct ?? 0);
@@ -879,10 +1054,10 @@ function isExcluded(canon, excluded) {
 function hasScores(ex) {
   return ex.students.some((s) => s.score != null);
 }
-function speedTieBonus(rankInTie, tieSize) {
-  if (tieSize <= 1) return 0;
-  const step = SPEED_TIEBREAKER_MAX / Math.max(1, tieSize - 1);
-  return Math.round((SPEED_TIEBREAKER_MAX - rankInTie * step) * 100) / 100;
+function exerciseQuestionTotal(ex) {
+  const fromQuestions = (ex?.questions || []).length;
+  if (fromQuestions) return fromQuestions;
+  return Math.max(0, ...(ex?.students || []).map((s) => toInt((podiumAttempt(s) || s).total, 0)));
 }
 function rankExercise(ex, aliases, excluded) {
   const byCanon = new Map();
@@ -896,49 +1071,52 @@ function rankExercise(ex, aliases, excluded) {
   }
   const arr = [...byCanon.values()];
   // Regla de orden: SIEMPRE gana quien tiene más aciertos.
-  // El puntaje Wordwall solo desempata entre quienes tienen los mismos aciertos.
+  // Wordwall solo se usa como desempate oculto entre quienes tienen los mismos aciertos.
   arr.sort((a, b) => {
     if (b.correct !== a.correct) return b.correct - a.correct;
     if ((b.score ?? -1) !== (a.score ?? -1)) return (b.score ?? -1) - (a.score ?? -1);
     return a.order - b.order;
   });
-  const tieGroups = new Map();
-  arr.forEach((s) => {
-    const key = String(s.correct ?? 0);
-    tieGroups.set(key, [...(tieGroups.get(key) || []), s]);
-  });
-  const bonusByCanon = new Map();
-  tieGroups.forEach((group) => {
-    group.forEach((s, idx) => bonusByCanon.set(s.canon, speedTieBonus(idx, group.length)));
-  });
   return arr.map((s, idx) => ({
     ...s,
     rank: idx + 1,
-    basePoints: (s.correct || 0) * POINTS_PER_CORRECT,
-    speedBonus: bonusByCanon.get(s.canon) || 0,
-    points: (s.correct || 0) * POINTS_PER_CORRECT + (bonusByCanon.get(s.canon) || 0),
+    points: s.correct || 0,
   }));
 }
 function buildConsolidated(exercises, aliases, excluded) {
   const map = new Map();
+  const totalGames = exercises.length;
+  const totalPossible = exercises.reduce((sum, ex) => sum + exerciseQuestionTotal(ex), 0);
   for (const ex of exercises) {
     for (const s of rankExercise(ex, aliases, excluded)) {
       const e =
-        map.get(s.canon) || { canon: s.canon, points: 0, score: 0, correct: 0, total: 0, played: 0, detail: [] };
+        map.get(s.canon) || { canon: s.canon, points: 0, score: 0, correct: 0, total: totalPossible, totalGames, missingGames: totalGames, played: 0, detail: [] };
       e.points += s.points;
-      e.basePoints = (e.basePoints || 0) + (s.basePoints || 0);
-      e.speedBonus = (e.speedBonus || 0) + (s.speedBonus || 0);
       e.score += s.score || 0;
       e.correct += s.correct;
-      e.total += s.total;
       e.played += 1;
-      e.detail.push({ exId: ex.id, title: ex.title, rank: s.rank, points: s.points, basePoints: s.basePoints, speedBonus: s.speedBonus, correct: s.correct, total: s.total, score: s.score });
+      e.missingGames = Math.max(0, totalGames - e.played);
+      e.detail.push({ exId: ex.id, title: ex.title, rank: s.rank, points: s.points, correct: s.correct, total: exerciseQuestionTotal(ex) || s.total, score: s.score });
       map.set(s.canon, e);
     }
   }
   const arr = [...map.values()];
-  arr.sort((a, b) => b.correct - a.correct || b.points - a.points || (b.score || 0) - (a.score || 0) || a.canon.localeCompare(b.canon, "es"));
+  arr.sort((a, b) => b.correct - a.correct || a.missingGames - b.missingGames || (b.score || 0) - (a.score || 0) || a.canon.localeCompare(b.canon, "es"));
   return arr.map((s, i) => ({ ...s, rank: i + 1 }));
+}
+function emptyConsolidatedStats(canon, exercises) {
+  return {
+    canon,
+    rank: null,
+    points: 0,
+    score: 0,
+    correct: 0,
+    total: exercises.reduce((sum, ex) => sum + exerciseQuestionTotal(ex), 0),
+    totalGames: exercises.length,
+    missingGames: exercises.length,
+    played: 0,
+    detail: [],
+  };
 }
 function activeRouteBlocks(route) {
   return (route?.blocks || []).filter((b) => !b.locked);
@@ -971,8 +1149,9 @@ function findUserStudent(ex, data, user) {
 }
 function gameRequirementStatus(resource, data, user) {
   const passing = toInt(resource.passingPct, PASSING_PCT);
-  if (!resource.exerciseId) return { linked: false, required: false, passed: true, percent: null, passing, played: false };
+  if (!resource.exerciseId) return { linked: false, required: true, passed: false, percent: null, passing, played: false, title: resource.label || "Juego sin vincular", state: "unlinked" };
   const ex = (data.exercises || []).find((e) => e.id === resource.exerciseId);
+  if (!ex) return { linked: false, required: true, passed: false, percent: null, passing, played: false, title: resource.label || "Juego sin resultado", state: "missingExercise" };
   const st = findUserStudent(ex, data, user);
   if (!st) return { linked: true, required: true, passed: false, percent: null, passing, played: false, title: ex?.title || resource.label || "Juego" };
   const best = learningAttempt(st);
@@ -991,7 +1170,7 @@ function blockLearningStatus(data, user, block) {
   const completed = !!row?.completed && requirementsMet;
   const missing = [];
   if (!audioOk) missing.push("audio");
-  if (!gamesOk) missing.push("juego >=80%");
+  if (!gamesOk) missing.push("juegos vinculados y aprobados >=80%");
   return { row, attended, hasAudio, audioOk, games, requiredGames, gamesOk, requirementsMet, completed, missing };
 }
 function routeProgressStats(data, user) {
@@ -1018,7 +1197,7 @@ function dashboardRows(data) {
   const route = data.route || emptyRoute();
   const consolidated = buildConsolidated(data.exercises || [], data.aliases || {}, data.excluded || []);
   return users.map((u) => {
-    const stats = u.linkedCanon ? consolidated.find((s) => norm(s.canon) === norm(u.linkedCanon)) : null;
+    const stats = u.linkedCanon ? (consolidated.find((s) => norm(s.canon) === norm(u.linkedCanon)) || emptyConsolidatedStats(u.linkedCanon, data.exercises || [])) : null;
     const routeStats = routeProgressStats(data, u);
     const complete = profileComplete(u);
     const issues = [];
@@ -1068,17 +1247,73 @@ function formatChampionshipPoints(value) {
 function displayOf(s, consolidated) {
   if (consolidated) {
     const parts = [];
-    if (s.played != null) parts.push(`${s.played} juego${s.played === 1 ? "" : "s"}`);
+    if (s.totalGames != null) parts.push(`${s.played}/${s.totalGames} juegos`);
+    if (s.missingGames > 0) parts.push(`faltan ${s.missingGames}`);
     parts.push(`${s.correct}/${s.total} aciertos`);
-    if (s.speedBonus) parts.push(`+${formatChampionshipPoints(s.speedBonus)} desempate`);
-    if (s.score) parts.push(`${s.score} pts Wordwall`);
     return { main: formatChampionshipPoints(s.points), unit: "pts campeonato", sub: parts.join(" · ") };
   }
   const parts = [];
-  if (s.score != null) parts.push(`${s.score} pts Wordwall`);
   parts.push(`${s.correct}/${s.total} aciertos`);
-  if (s.speedBonus) parts.push(`+${formatChampionshipPoints(s.speedBonus)} desempate`);
   return { main: formatChampionshipPoints(s.points), unit: "pts campeonato", sub: parts.join(" · ") };
+}
+
+function roleLabel(key) {
+  return ROLEPLAY_ROLES.find((r) => r.key === key)?.label || key;
+}
+function makeJoinCode() {
+  const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+  let code = "";
+  for (let i = 0; i < 5; i++) code += chars[Math.floor(Math.random() * chars.length)];
+  return code;
+}
+function nextAscosType(participants = [], participantTypes = []) {
+  const options = participantTypes.length ? participantTypes : DEFAULT_ASCOS_TYPES;
+  const used = new Map();
+  participants.forEach((p) => {
+    if (!p.isFacilitator && p.assignedRoleId) used.set(p.assignedRoleId, (used.get(p.assignedRoleId) || 0) + 1);
+  });
+  return [...options].sort((a, b) => (used.get(a.id) || 0) - (used.get(b.id) || 0))[0] || options[0];
+}
+function sessionHasUser(session, user) {
+  return (session?.participants || []).some((p) => p.userId === user?.id);
+}
+function roleplayStats(data) {
+  const sessions = data.roleplaySessions || [];
+  const events = data.roleplayEvents || [];
+  const sessionParticipants = sessions.flatMap((s) => s.participants || []);
+  const userKey = (p) => p.userId || norm(p.userName);
+  const eventKey = (e) => e.userId || norm(e.userName);
+  const roleUse = {};
+  for (const role of ROLEPLAY_ROLES) roleUse[role.key] = { opens: 0, users: new Set(), sessions: 0, participants: 0 };
+  sessions.forEach((s) => {
+    const key = s.roleType || "asesor";
+    if (!roleUse[key]) roleUse[key] = { opens: 0, users: new Set(), sessions: 0, participants: 0 };
+    roleUse[key].sessions += 1;
+    roleUse[key].participants += (s.participants || []).length;
+  });
+  events.forEach((e) => {
+    const key = e.roleType || "sin_rol";
+    if (!roleUse[key]) roleUse[key] = { opens: 0, users: new Set(), sessions: 0, participants: 0 };
+    roleUse[key].opens += 1;
+    if (eventKey(e)) roleUse[key].users.add(eventKey(e));
+  });
+  return {
+    sessions: sessions.length,
+    activeSessions: sessions.filter((s) => s.status !== "closed").length,
+    sessionParticipants: sessionParticipants.length,
+    uniqueSessionUsers: new Set(sessionParticipants.map(userKey).filter(Boolean)).size,
+    resourceOpens: events.length,
+    uniqueEventUsers: new Set(events.map(eventKey).filter(Boolean)).size,
+    totalUniqueUsers: new Set([...sessionParticipants.map(userKey), ...events.map(eventKey)].filter(Boolean)).size,
+    roleUse,
+  };
+}
+function upsertLocalRoleplaySession(data, saved) {
+  const rest = (data.roleplaySessions || []).filter((s) => s.id !== saved.id);
+  return { ...data, roleplaySessions: [saved, ...rest] };
+}
+function upsertLocalRoleplayEvent(data, saved) {
+  return { ...data, roleplayEvents: [saved, ...((data.roleplayEvents || []).filter((e) => e.id !== saved.id))] };
 }
 
 /* ================= Confetti ================= */
@@ -1319,16 +1554,15 @@ function ScoringInfo({ compact }) {
       {open && (
         <div className="scoring-body">
           <p>
-            En <b>cada ejercicio</b> los puntos campeonato salen del <b>primer intento</b>:
-            cada acierto vale <b>{POINTS_PER_CORRECT} puntos</b>. Si dos personas tienen los mismos aciertos,
-            Wordwall solo agrega un bono pequeño de desempate por rapidez.
+            Los <b>puntos campeonato</b> son los aciertos del <b>primer intento</b>. Todos los juegos
+            de la plataforma cuentan para el consolidado; si falta un juego, suma 0 aciertos en ese juego.
           </p>
           <div className="scoring-grid">
             {[
-              ["✔", "Cada acierto", `${POINTS_PER_CORRECT} pts`],
-              ["⚡", "Bono desempate", `0-${SPEED_TIEBREAKER_MAX} pts`],
-              ["🥇", "Orden del juego", "Aciertos primero"],
-              ["🏆", "Consolidado", "Suma total"],
+              ["✔", "1 acierto", "1 punto"],
+              ["🎮", "Juego pendiente", "0 puntos"],
+              ["📊", "% aciertos", "sobre todo"],
+              ["🏆", "Consolidado", "total"],
             ].map(([ic, l, p]) => (
               <div key={l} className="scoring-item">
                 <span className="scoring-ic">{ic}</span>
@@ -1338,12 +1572,12 @@ function ScoringInfo({ compact }) {
             ))}
           </div>
           <p className="dim" style={{ fontSize: 12.5, marginTop: 4 }}>
-            El <b>Consolidado</b> ordena primero por aciertos acumulados del primer intento.
-            El bono de rapidez solo separa empates; no puede poner arriba a alguien con menos aciertos.
+            El porcentaje se calcula sobre el total de preguntas de todos los juegos obligatorios,
+            no solo sobre los juegos que la persona ya jugó.
           </p>
           <p className="dim" style={{ fontSize: 12.5, marginTop: 8 }}>
-            <b>Ejemplo:</b> 7/7 equivale a 7000 puntos base. 6/7 puede llegar como máximo a 6009 con desempate,
-            así que nunca supera a quien tuvo más aciertos.
+            Si dos personas tienen los mismos aciertos, Wordwall puede desempatar el orden interno,
+            pero no aparece como puntos campeonato.
           </p>
         </div>
       )}
@@ -1368,13 +1602,12 @@ function FullTable({ rows, consolidated, withScores, onStudent }) {
               <>
                 <th className="th-hl">Pts campeonato</th>
                 <th>Juegos</th>
+                <th>Faltan</th>
                 <th>Aciertos</th>
-                <th>Puntaje Wordwall</th>
               </>
             ) : (
               <>
                 <th className="th-hl">Pts campeonato</th>
-                {withScores && <th>Puntaje Wordwall</th>}
                 <th>Aciertos</th>
                 <th style={{ minWidth: 110 }}>%</th>
               </>
@@ -1394,14 +1627,13 @@ function FullTable({ rows, consolidated, withScores, onStudent }) {
               {consolidated ? (
                 <>
                   <td className="td-champ"><span className="champ-pill">{formatChampionshipPoints(s.points)}</span></td>
-                  <td className="t-num">{s.played}</td>
+                  <td className="t-num">{s.played}/{s.totalGames || s.played}</td>
+                  <td className={s.missingGames ? "t-red t-num" : "t-teal t-num"}>{s.missingGames || 0}</td>
                   <td className="t-num">{s.correct}/{s.total} <span className="dim">({pct(s.correct, s.total)}%)</span></td>
-                  <td className="t-num dim">{s.score || "—"}</td>
                 </>
               ) : (
                 <>
                   <td className="td-champ"><span className="champ-pill">{formatChampionshipPoints(s.points)}</span></td>
-                  {withScores && <td className="t-teal">{s.score ?? "—"}</td>}
                   <td className="t-num">{s.correct}/{s.total}</td>
                   <td>
                     <span className="mini-bar"><i style={{ width: `${pct(s.correct, s.total)}%` }} /></span>
@@ -1415,8 +1647,8 @@ function FullTable({ rows, consolidated, withScores, onStudent }) {
       </table>
       <div className="tbl-note">
         {consolidated
-          ? "El puesto se decide por puntos campeonato, calculados desde los aciertos del primer intento. Toca un nombre para ver su detalle."
-          : "El puesto se decide por aciertos; Wordwall desempata cuando hay igualdad. Toca un nombre para ver su detalle."}
+          ? "El puesto se decide por aciertos acumulados del primer intento. Los juegos pendientes cuentan como 0. Toca un nombre para ver su detalle."
+          : "El puesto se decide por aciertos del primer intento. Toca un nombre para ver su detalle."}
       </div>
     </div>
   );
@@ -1473,7 +1705,7 @@ function StudentModal({ canon, data, onClose }) {
         {detail.cons && (
           <div className="consline">
             <span className="t-gold">{formatChampionshipPoints(detail.cons.points)} pts de campeonato</span> · puesto {detail.cons.rank} · {detail.cons.correct}/{detail.cons.total} aciertos
-            {detail.cons.score ? <span className="dim"> · {detail.cons.score} pts Wordwall acumulados</span> : ""}
+            {detail.cons.missingGames ? <span className="dim"> · faltan {detail.cons.missingGames} juego{detail.cons.missingGames === 1 ? "" : "s"}</span> : ""}
           </div>
         )}
         {detail.perEx.map(({ ex, st }) => (
@@ -1481,7 +1713,7 @@ function StudentModal({ canon, data, onClose }) {
             <div className="modal-ex-head">
               {ex.title}
               <span className="dim">
-                {" "}— {st.score != null ? `${st.score} pts · ` : ""}{st.correct}/{st.total} · puesto {st.rank} · {formatChampionshipPoints(st.points)} pts campeonato
+                {" "}— {st.correct}/{st.total} · puesto {st.rank} · {formatChampionshipPoints(st.points)} pts campeonato
               </span>
             </div>
             <div className="modal-qs">
@@ -1655,12 +1887,12 @@ function AdminDashboard({ data }) {
     const needs = [];
     if (!r.profileComplete) needs.push("completar tu perfil");
     if (!r.user.linkedCanon) needs.push("avisar al equipo si tu nombre de juego no coincide con tu perfil");
-    if (r.audioState === "pending") needs.push("escuchar el audio de acompanamiento");
+    if (r.audioState === "pending") needs.push("escuchar el audio de acompañamiento");
     if (r.gameState === "pending") needs.push("realizar el juego requerido");
-    if (r.gameState === "failed") needs.push("reforzar y aprobar el juego con minimo 80%");
+    if (r.gameState === "failed") needs.push("reforzar y aprobar el juego con mínimo 80%");
     if (r.unlockState === "locked") needs.push("cerrar el bloque anterior para desbloquear el siguiente");
     if (!needs.length) needs.push("revisar tu avance");
-    return `Hola ${firstName}, te escribimos por tu preparacion EJE. En el bloque "${blockName}" tienes pendiente: ${needs.join(", ")}. Entra a la plataforma para continuar tu ruta.`;
+    return `Hola ${firstName}, te escribimos por tu preparación EJE. En el bloque "${blockName}" tienes pendiente: ${needs.join(", ")}. Entra a la plataforma para continuar tu ruta.`;
   };
   const copyText = async (text, okMessage) => {
     try {
@@ -1668,7 +1900,7 @@ function AdminDashboard({ data }) {
       setAlertToast(okMessage);
       setTimeout(() => setAlertToast(""), 2600);
     } catch {
-      setAlertToast("No se pudo copiar automaticamente. Selecciona el texto desde la exportacion.");
+      setAlertToast("No se pudo copiar automáticamente. Selecciona el texto desde la exportación.");
     }
   };
   const copyFilteredAlerts = () => {
@@ -1694,6 +1926,7 @@ function AdminDashboard({ data }) {
       Juego: labelFor(gameLabels, r.gameState),
       Desbloqueo: labelFor(unlockLabels, r.unlockState),
       "Juegos con resultados": r.stats?.played || 0,
+      "Juegos pendientes": r.stats?.missingGames ?? "",
       "Aciertos": r.stats ? `${r.stats.correct}/${r.stats.total}` : "",
       "Puntos campeonato": r.stats?.points || 0,
       Estado: r.status,
@@ -1967,7 +2200,7 @@ function RouteEditor({ data, persist, busy }) {
   };
   const addResource = (bi, type) =>
     mark(() => setBlocks((prev) => prev.map((b, i) =>
-      i === bi ? { ...b, resources: [...(b.resources || []), { id: uid(), type, label: "", url: "", embedUrl: "", slide: "", exerciseId: "", passingPct: PASSING_PCT }] } : b
+      i === bi ? { ...b, resources: [...(b.resources || []), { id: uid(), type, label: "", url: "", resultsUrl: "", embedUrl: "", slide: "", exerciseId: "", passingPct: PASSING_PCT }] } : b
     )));
   const setResField = (bi, ri, field, val) =>
     mark(() => setBlocks((prev) => prev.map((b, i) =>
@@ -1979,6 +2212,7 @@ function RouteEditor({ data, persist, busy }) {
     )));
 
   const save = async () => {
+    const resultLinks = new Map();
     const clean = blocks.map((b) => ({
       ...b,
       title: (b.title || "").trim(),
@@ -1986,17 +2220,23 @@ function RouteEditor({ data, persist, busy }) {
       pptUrl: (b.pptUrl || "").trim(),
       audioUrl: (b.audioUrl || "").trim(),
       attendance: splitNames(b.attendanceText ?? b.attendance),
-      resources: (b.resources || []).filter((r) => (r.url || r.embedUrl || "").trim()).map((r) => ({
-        ...r,
-        url: (r.url || "").trim(),
-        embedUrl: (r.embedUrl || "").trim(),
-        label: (r.label || "").trim(),
-        slide: r.slide,
-        exerciseId: r.exerciseId || "",
-        passingPct: toInt(r.passingPct, PASSING_PCT),
-      })),
+      resources: (b.resources || []).filter((r) => (r.url || r.resultsUrl || r.embedUrl || "").trim()).map((r) => {
+        const cleaned = {
+          ...r,
+          url: (r.url || "").trim(),
+          resultsUrl: (r.resultsUrl || "").trim(),
+          embedUrl: (r.embedUrl || "").trim(),
+          label: (r.label || "").trim(),
+          slide: r.slide,
+          exerciseId: r.exerciseId || "",
+          passingPct: toInt(r.passingPct, PASSING_PCT),
+        };
+        if (cleaned.type === "game" && cleaned.exerciseId && cleaned.resultsUrl) resultLinks.set(cleaned.exerciseId, cleaned.resultsUrl);
+        return cleaned;
+      }),
     }));
-    await persist({ ...data, route: { title: title.trim() || "Ruta de Preparación", blocks: clean } });
+    const exercises = (data.exercises || []).map((ex) => resultLinks.has(ex.id) ? { ...ex, resultsUrl: resultLinks.get(ex.id) } : ex);
+    await persist({ ...data, exercises, route: { title: title.trim() || "Ruta de Preparación", blocks: clean } });
     setDirty(false);
   };
 
@@ -2005,7 +2245,8 @@ function RouteEditor({ data, persist, busy }) {
       <div className="dim" style={{ fontSize: 13 }}>
         Arma la ruta como una serie de <b>bloques</b> (estaciones de la cancha). Cada bloque puede tener una
         <b> presentación embebida</b> (Google Slides, Canva o PowerPoint online), y <b>botones</b> de juegos de
-        Wordwall y videos de YouTube, indicando en qué lámina aparecen. El último bloque es el <b>gol</b>.
+        Wordwall y videos de YouTube, indicando en qué lámina aparecen. Para cada juego usa: link para jugar,
+        ejercicio del podio vinculado y, opcionalmente, link de resultados para administración. El último bloque es el <b>gol</b>.
       </div>
 
       <div className="card">
@@ -2083,13 +2324,13 @@ function RouteEditor({ data, persist, busy }) {
                   <div key={r.id} className={`res-edit res-edit--${r.type}`}>
                     <span className="res-edit-ic">{r.type === "game" ? "🎮" : "▶️"}</span>
                     <input className="inp inp--sm" value={r.label} onChange={(e) => setResField(bi, ri, "label", e.target.value)} placeholder={r.type === "game" ? "Nombre del juego" : "Título del video"} />
-                    <input className="inp inp--sm" value={r.url} onChange={(e) => setResField(bi, ri, "url", e.target.value)} placeholder={r.type === "game" ? "Link de Wordwall" : "Link de YouTube"} />
+                    <input className="inp inp--sm" value={r.url} onChange={(e) => setResField(bi, ri, "url", e.target.value)} placeholder={r.type === "game" ? "Link para jugar Wordwall" : "Link de YouTube"} />
                     <input className="inp inp--slide" value={r.slide} onChange={(e) => setResField(bi, ri, "slide", e.target.value.replace(/\D/g, ""))} placeholder="Lám." title="Nº de lámina" />
                     {r.type === "game" && (
                       <>
-                        <input className="inp inp--sm res-edit-wide" value={r.embedUrl || ""} onChange={(e) => setResField(bi, ri, "embedUrl", e.target.value)} placeholder="HTML iframe o link embed de Wordwall" />
+                        <input className="inp inp--sm res-edit-wide" value={r.resultsUrl || ""} onChange={(e) => setResField(bi, ri, "resultsUrl", e.target.value)} placeholder="Link de ver resultados (admin)" />
                         <select className="inp inp--sm" value={r.exerciseId || ""} onChange={(e) => setResField(bi, ri, "exerciseId", e.target.value)}>
-                          <option value="">Vincular resultado Wordwall</option>
+                          <option value="">Vincular con ejercicio del podio</option>
                           {data.exercises.map((ex) => <option key={ex.id} value={ex.id}>{ex.title}</option>)}
                         </select>
                         <input className="inp inp--slide" value={r.passingPct ?? PASSING_PCT} onChange={(e) => setResField(bi, ri, "passingPct", e.target.value.replace(/\D/g, ""))} title="% mínimo" />
@@ -2217,14 +2458,14 @@ function ExerciseEditor({ exercise, data, persist, busy, onClose }) {
           <div>
             <label className="lbl">Link de resultados Wordwall</label>
             <div className="link-sync-row">
-              <input className="inp" value={resultsUrl} onChange={(e) => setResultsUrl(e.target.value)} placeholder="Pega aqui el link de resultados de Wordwall" />
+            <input className="inp" value={resultsUrl} onChange={(e) => setResultsUrl(e.target.value)} placeholder="Pega aquí el link de resultados de Wordwall" />
               <button className="btn btn--teal-o btn--sm" onClick={applyResultsUrl} disabled={urlBusy || !resultsUrl.trim()}>
                 {urlBusy ? "Actualizando..." : "Actualizar desde link"}
               </button>
             </div>
             {urlMsg && <div className={urlMsg.ok ? "ok-inline" : "warn-inline"}>{urlMsg.t}</div>}
             <div className="dim" style={{ fontSize: 12, marginTop: 6 }}>
-              Si Wordwall no permite lectura automatica, usa el Excel o pega el detallado.
+              Si Wordwall no permite lectura automática, usa el Excel o pega el detallado.
             </div>
           </div>
 
@@ -2255,7 +2496,7 @@ function ExerciseEditor({ exercise, data, persist, busy, onClose }) {
               <thead>
                 <tr>
                   <th>Participante</th>
-                  <th>Puntuación</th>
+                  <th>Desempate</th>
                   <th>Aciertos</th>
                   <th>Preguntas</th>
                   <th style={{ width: 44 }}></th>
@@ -2430,14 +2671,14 @@ function QuestionBox({ user, questions, onSubmit, onClose }) {
   const send = async () => {
     setMsg(null);
     if (text.trim().length < 8) {
-      setMsg({ ok: false, t: "Escribe una pregunta un poco mas completa." });
+      setMsg({ ok: false, t: "Escribe una pregunta un poco más completa." });
       return;
     }
     setBusy(true);
     try {
       await onSubmit(text.trim());
       setText("");
-      setMsg({ ok: true, t: "Pregunta enviada. El equipo la revisara." });
+      setMsg({ ok: true, t: "Pregunta enviada. El equipo la revisará." });
     } catch (e) {
       setMsg({ ok: false, t: "No se pudo enviar la pregunta. Intentalo de nuevo." });
     } finally {
@@ -2449,7 +2690,7 @@ function QuestionBox({ user, questions, onSubmit, onClose }) {
     <div className="overlay" onClick={onClose}>
       <div className="modal modal--mid" onClick={(e) => e.stopPropagation()}>
         <div className="modal-head">
-          <div className="disp modal-title">BUZON DE PREGUNTAS</div>
+          <div className="disp modal-title">BUZÓN DE PREGUNTAS</div>
           <button className="btn btn--ghost btn--sm" onClick={onClose}>Cerrar</button>
         </div>
         <div className="stack">
@@ -2458,7 +2699,7 @@ function QuestionBox({ user, questions, onSubmit, onClose }) {
             rows={5}
             value={text}
             onChange={(e) => setText(e.target.value)}
-            placeholder="Escribe tu pregunta para el equipo de acompanamiento"
+            placeholder="Escribe tu pregunta para el equipo de acompañamiento"
           />
           {msg && <div className={msg.ok ? "ok-inline" : "warn-inline"}>{msg.t}</div>}
           <button className="btn btn--gold" onClick={send} disabled={busy || !text.trim()}>
@@ -2468,7 +2709,7 @@ function QuestionBox({ user, questions, onSubmit, onClose }) {
           <div className="question-history">
             <div className="requirements-title">Mis preguntas recientes</div>
             {mine.length === 0 ? (
-              <div className="empty empty--compact">Aun no has enviado preguntas.</div>
+              <div className="empty empty--compact">Aún no has enviado preguntas.</div>
             ) : (
               mine.map((q) => (
                 <div key={q.id} className="question-item">
@@ -2512,8 +2753,8 @@ function QuestionsAdmin({ data, busy, onUpdate }) {
     <div className="questions-admin">
       <div className="card attendance-hero">
         <div>
-          <div className="dash-eyebrow">Acompanamiento</div>
-          <div className="dash-title">Buzon de preguntas</div>
+          <div className="dash-eyebrow">Acompañamiento</div>
+          <div className="dash-title">Buzón de preguntas</div>
           <div className="dim">Revisa preguntas generales, marca estados y deja una respuesta visible para el participante.</div>
         </div>
       </div>
@@ -2568,6 +2809,254 @@ function QuestionsAdmin({ data, busy, onUpdate }) {
               </div>
             </div>
           ))
+        )}
+      </div>
+    </div>
+  );
+}
+
+function RoleplayAdmin({ data, persist, busy }) {
+  const [local, setLocal] = useState(() => normalizeRoleplay(data.roleplay));
+  const [dirty, setDirty] = useState(false);
+  const [uploading, setUploading] = useState("");
+  const [msg, setMsg] = useState("");
+  const stats = useMemo(() => roleplayStats(data), [data]);
+
+  useEffect(() => {
+    setLocal(normalizeRoleplay(data.roleplay));
+    setDirty(false);
+  }, [data.roleplay]);
+
+  const mark = (fn) => {
+    fn();
+    setDirty(true);
+    setMsg("");
+  };
+  const setTypeField = (idx, field, value) => mark(() => setLocal((prev) => ({
+    ...prev,
+    participantTypes: prev.participantTypes.map((t, i) => (i === idx ? { ...t, [field]: value } : t)),
+  })));
+  const addType = () => mark(() => setLocal((prev) => ({
+    ...prev,
+    participantTypes: [...prev.participantTypes, { id: uid(), name: "Nuevo tipo de joven", guide: "" }],
+  })));
+  const removeType = (idx) => mark(() => setLocal((prev) => ({
+    ...prev,
+    participantTypes: prev.participantTypes.filter((_, i) => i !== idx),
+  })));
+  const addResource = (roleKey, type) => mark(() => setLocal((prev) => ({
+    ...prev,
+    [roleKey]: {
+      ...prev[roleKey],
+      resources: [...(prev[roleKey]?.resources || []), { id: uid(), type, label: "", url: "", note: "" }],
+    },
+  })));
+  const setResourceField = (roleKey, idx, field, value) => mark(() => setLocal((prev) => ({
+    ...prev,
+    [roleKey]: {
+      ...prev[roleKey],
+      resources: (prev[roleKey]?.resources || []).map((r, i) => (i === idx ? { ...r, [field]: value } : r)),
+    },
+  })));
+  const removeResource = (roleKey, idx) => mark(() => setLocal((prev) => ({
+    ...prev,
+    [roleKey]: {
+      ...prev[roleKey],
+      resources: (prev[roleKey]?.resources || []).filter((_, i) => i !== idx),
+    },
+  })));
+  const uploadResource = async (roleKey, idx, file) => {
+    if (!file) return;
+    const resource = local[roleKey]?.resources?.[idx];
+    if (!resource) return;
+    if (resource.type === "audio" && !/^audio\//.test(file.type || "")) {
+      setMsg("El recurso de audio debe ser un archivo de audio.");
+      return;
+    }
+    if (resource.type === "file" && file.type !== "application/pdf") {
+      setMsg("El archivo del coordinador debe ser PDF.");
+      return;
+    }
+    const key = `${roleKey}-${idx}`;
+    setUploading(key);
+    setMsg("");
+    try {
+      const url = await sbUpload(file);
+      setResourceField(roleKey, idx, "url", url);
+      if (!resource.label) setResourceField(roleKey, idx, "label", file.name.replace(/\.[^.]+$/, ""));
+      setMsg("Archivo subido. Recuerda guardar la configuración.");
+    } catch {
+      setMsg("No se pudo subir el archivo. Revisa tu conexión e inténtalo otra vez.");
+    } finally {
+      setUploading("");
+    }
+  };
+  const save = async () => {
+    const cleaned = normalizeRoleplay(local);
+    await persist({ ...data, roleplay: cleaned });
+    setLocal(cleaned);
+    setDirty(false);
+  };
+  const renderResourceRows = (roleKey) => {
+    const resources = local[roleKey]?.resources || [];
+    return (
+      <div className="role-resource-list">
+        {resources.length === 0 && <div className="empty empty--compact">Todavía no hay recursos para este rol.</div>}
+        {resources.map((r, idx) => (
+          <div key={r.id} className="role-resource-row">
+            {roleKey === "coordinador" && (
+              <select className="inp inp--sm" value={r.type} onChange={(e) => setResourceField(roleKey, idx, "type", e.target.value)}>
+                <option value="file">PDF</option>
+                <option value="audio">Audio</option>
+              </select>
+            )}
+            <input className="inp inp--sm" value={r.label} onChange={(e) => setResourceField(roleKey, idx, "label", e.target.value)} placeholder="Nombre visible" />
+            <input className="inp inp--sm role-resource-url" value={r.url} onChange={(e) => setResourceField(roleKey, idx, "url", e.target.value)} placeholder={r.type === "wordwall" ? "Link de Wordwall" : "Link o archivo subido"} />
+            {roleKey === "coordinador" && (
+              <label className="btn btn--teal-o btn--sm ppt-upload-btn">
+                {uploading === `${roleKey}-${idx}` ? "Subiendo..." : r.type === "audio" ? "Subir audio" : "Subir PDF"}
+                <input
+                  type="file"
+                  accept={r.type === "audio" ? "audio/*" : "application/pdf"}
+                  style={{ display: "none" }}
+                  disabled={uploading === `${roleKey}-${idx}`}
+                  onChange={(e) => { if (e.target.files[0]) uploadResource(roleKey, idx, e.target.files[0]); e.target.value = ""; }}
+                />
+              </label>
+            )}
+            <input className="inp inp--sm" value={r.note || ""} onChange={(e) => setResourceField(roleKey, idx, "note", e.target.value)} placeholder="Nota breve opcional" />
+            <button className="icon-btn" title="Quitar recurso" onClick={() => removeResource(roleKey, idx)}>✕</button>
+          </div>
+        ))}
+      </div>
+    );
+  };
+
+  return (
+    <div className="role-admin stack">
+      <div className="card dash-hero">
+        <div>
+          <div className="dash-eyebrow">Práctica por rol</div>
+          <div className="dash-title">Juego de roles</div>
+          <div className="dim">Configura casos, juegos y materiales. El uso se registra para ver participación desde administración.</div>
+        </div>
+        <button className="btn btn--gold btn--sm" onClick={save} disabled={busy || !dirty}>
+          {dirty ? "Guardar juego de roles" : "Guardado"}
+        </button>
+      </div>
+      {msg && <div className="toast toast--ok">{msg}</div>}
+
+      <div className="dash-kpis">
+        <div className="card dash-kpi"><span>{stats.sessions}</span><b>Sesiones asesor</b><small>{stats.activeSessions} abiertas</small></div>
+        <div className="card dash-kpi"><span>{stats.sessionParticipants}</span><b>Participantes en sesiones</b><small>{stats.uniqueSessionUsers} únicos</small></div>
+        <div className="card dash-kpi"><span>{stats.resourceOpens}</span><b>Usos de recursos</b><small>{stats.uniqueEventUsers} usuarios</small></div>
+        <div className="card dash-kpi"><span>{stats.totalUniqueUsers}</span><b>Alcance total</b><small>Sesiones y recursos</small></div>
+      </div>
+
+      <div className="card dash-panel">
+        <div className="dash-panel-head">
+          <div>
+            <div className="dash-panel-title">Uso por rol</div>
+            <div className="dim">Sesiones, participantes y aperturas de recursos.</div>
+          </div>
+        </div>
+        <div className="role-usage-grid">
+          {ROLEPLAY_ROLES.map((role) => {
+            const use = stats.roleUse[role.key] || { opens: 0, users: new Set(), sessions: 0, participants: 0 };
+            return (
+              <div key={role.key} className="role-usage-card">
+                <b>{role.label}</b>
+                <span>{use.sessions} sesiones · {use.participants} participantes</span>
+                <span>{use.opens} aperturas · {use.users.size} usuarios</span>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      <div className="card dash-panel">
+        <div className="dash-panel-head">
+          <div>
+            <div className="dash-panel-title">Casos para práctica de asesor</div>
+            <div className="dim">Basado en el Anexo 4 del Manual AS-COS. Puedes editarlo si quieres ajustar el lenguaje.</div>
+          </div>
+          <button className="btn btn--teal-o btn--sm" onClick={addType}>+ Agregar caso</button>
+        </div>
+        <div className="ascos-edit-list">
+          {local.participantTypes.map((t, idx) => (
+            <div key={t.id} className="ascos-edit-row">
+              <input className="inp inp--sm" value={t.name} onChange={(e) => setTypeField(idx, "name", e.target.value)} placeholder="Tipo de joven" />
+              <input className="inp inp--sm ascos-guide" value={t.guide} onChange={(e) => setTypeField(idx, "guide", e.target.value)} placeholder="Descripción breve" />
+              <button className="icon-btn" title="Quitar caso" onClick={() => removeType(idx)}>✕</button>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div className="role-admin-grid">
+        <div className="card dash-panel">
+          <div className="dash-panel-head">
+            <div>
+              <div className="dash-panel-title">Apoyo interno</div>
+              <div className="dim">Juegos prácticos de Wordwall.</div>
+            </div>
+            <button className="btn btn--teal-o btn--sm" onClick={() => addResource("apoyo_interno", "wordwall")}>+ Juego</button>
+          </div>
+          {renderResourceRows("apoyo_interno")}
+        </div>
+        <div className="card dash-panel">
+          <div className="dash-panel-head">
+            <div>
+              <div className="dash-panel-title">Apoyo externo</div>
+              <div className="dim">Juegos prácticos de Wordwall.</div>
+            </div>
+            <button className="btn btn--teal-o btn--sm" onClick={() => addResource("apoyo_externo", "wordwall")}>+ Juego</button>
+          </div>
+          {renderResourceRows("apoyo_externo")}
+        </div>
+        <div className="card dash-panel role-admin-card-wide">
+          <div className="dash-panel-head">
+            <div>
+              <div className="dash-panel-title">Coordinador</div>
+              <div className="dim">PDFs y audios requeridos para el retiro.</div>
+            </div>
+            <div className="row-actions">
+              <button className="btn btn--teal-o btn--sm" onClick={() => addResource("coordinador", "file")}>+ PDF</button>
+              <button className="btn btn--teal-o btn--sm" onClick={() => addResource("coordinador", "audio")}>+ Audio</button>
+            </div>
+          </div>
+          {renderResourceRows("coordinador")}
+        </div>
+      </div>
+
+      <div className="card dash-panel">
+        <div className="dash-panel-head">
+          <div>
+            <div className="dash-panel-title">Últimas sesiones de asesor</div>
+            <div className="dim">Códigos creados por participantes para practicar.</div>
+          </div>
+        </div>
+        {(data.roleplaySessions || []).length === 0 ? (
+          <div className="empty empty--compact">Aún no hay sesiones creadas.</div>
+        ) : (
+          <div className="dash-table-wrap">
+            <table className="dash-table">
+              <thead>
+                <tr><th>Código</th><th>Creador</th><th>Participantes</th><th>Estado</th><th>Creada</th></tr>
+              </thead>
+              <tbody>
+                {(data.roleplaySessions || []).slice(0, 12).map((s) => (
+                  <tr key={s.id}>
+                    <td><b>{s.code}</b></td>
+                    <td>{s.ownerName || "Participante"}</td>
+                    <td>{(s.participants || []).length}</td>
+                    <td>{s.status === "closed" ? "Cerrada" : "Abierta"}</td>
+                    <td>{s.createdAt ? new Date(s.createdAt).toLocaleString("es-PE") : ""}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         )}
       </div>
     </div>
@@ -2823,6 +3312,7 @@ function AdminPanel({ data, setData, onExit }) {
       </div>
 
       <div className="tabs">
+        <button className={`tab ${tab === "roles" ? "tab--on" : ""}`} onClick={() => setTab("roles")}>Juego de roles</button>
         {[["dashboard", "📊 Dashboard"], ["ruta", "🏟️ Ruta Formativa"], ["asistencia", "✅ Asistencia"], ["preguntas", `💬 Preguntas (${(data.questions || []).filter((q) => q.status !== "archived").length})`], ["subir", "⬆ Subir resultados"], ["ejercicios", `📋 Ejercicios (${data.exercises.length})`], ["usuarios", `👥 Usuarios (${(data.users || []).length})`], ["participantes", "🏃 Participantes"], ["alias", "👤 Nombres y alias"], ["pin", "🔒 PIN"]].map(([k, t]) => (
           <button key={k} className={`tab ${tab === k ? "tab--on" : ""}`} onClick={() => setTab(k)}>{t}</button>
         ))}
@@ -2833,6 +3323,8 @@ function AdminPanel({ data, setData, onExit }) {
       {tab === "dashboard" && <AdminDashboard data={data} />}
 
       {tab === "ruta" && <RouteEditor data={data} persist={persist} busy={busy} />}
+
+      {tab === "roles" && <RoleplayAdmin data={data} persist={persist} busy={busy} />}
 
       {tab === "asistencia" && <AttendanceAdmin data={data} busy={busy} onSave={saveAttendanceBlock} />}
 
@@ -2847,7 +3339,7 @@ function AdminPanel({ data, setData, onExit }) {
                   <div className="opt-badge opt-badge--a">OPCIÓN A · RECOMENDADA</div>
                   <div className="dropzone-icon">📊</div>
                   <div className="dropzone-title">Sube el Excel de Wordwall</div>
-                  <div className="dropzone-sub">Trae el detalle por pregunta. Luego podrás pegar el detallado para sumar el puntaje con bonus.</div>
+                  <div className="dropzone-sub">Trae el detalle por pregunta. Luego podrás pegar el detallado si necesitas completar datos.</div>
                   <span className="dropzone-cta">Elegir archivo .xlsx</span>
                   <input ref={fileRef} type="file" accept=".xlsx,.xls" style={{ display: "none" }} onChange={(e) => e.target.files[0] && onFile(e.target.files[0])} />
                 </div>
@@ -2883,7 +3375,7 @@ function AdminPanel({ data, setData, onExit }) {
               <div className="card">
                 <div className="step">
                   <span className="step-n">2</span>
-                  {parsed.fromPaste ? "Pega el detallado de Wordwall" : "(Recomendado) Pega el detallado para incluir la Puntuación con bonus"}
+                  {parsed.fromPaste ? "Pega el detallado de Wordwall" : "(Opcional) Pega el detallado para actualizar datos"}
                 </div>
                 <textarea
                   className="inp inp--mono"
@@ -3161,6 +3653,17 @@ function PinGate({ data, setData, onOk, onCancel }) {
 function ResourceButton({ r, onOpen }) {
   const icon = r.type === "game" ? "🎮" : "▶️";
   const cls = r.type === "game" ? "res-btn res-btn--game" : "res-btn res-btn--video";
+  if (r.type === "game" && r.url) {
+    return (
+      <a className={cls} href={r.url} target="_blank" rel="noreferrer">
+        <span className="res-ic">{icon}</span>
+        <span className="res-txt">
+          <span className="res-label">{r.label || "Juego Wordwall"}</span>
+          {r.slide ? <span className="res-slide">Lámina {r.slide}</span> : null}
+        </span>
+      </a>
+    );
+  }
   return (
     <button className={cls} onClick={() => onOpen(r)}>
       <span className="res-ic">{icon}</span>
@@ -3366,7 +3869,7 @@ function BlockModal({ block, status, progressBusy, onToggleComplete, onAudioProg
         )}
 
         {status.attended && (
-          <div className="attendance-note">Asistencia registrada: el audio queda como repaso opcional.</div>
+          <div className="attendance-note">Asistencia registrada: el audio queda como repaso opcional. Los juegos siguen siendo obligatorios y deben aprobarse con 80%.</div>
         )}
 
         {status.requiredGames.length > 0 && (
@@ -3376,7 +3879,7 @@ function BlockModal({ block, status, progressBusy, onToggleComplete, onAudioProg
               <div key={idx} className="requirement-row">
                 <span>{g.title}</span>
                 <b className={g.passed ? "t-teal" : "t-red"}>
-                  {g.played ? `${g.percent}% / meta ${g.passing}%` : `Pendiente / meta ${g.passing}%`}
+                  {!g.linked ? "Falta vincular resultado" : g.played ? `${g.percent}% / meta ${g.passing}%` : `Pendiente / meta ${g.passing}%`}
                 </b>
               </div>
             ))}
@@ -3459,6 +3962,234 @@ function ContentViewer({ resource, onClose }) {
           💡 Si no ves el contenido arriba, usa el botón dorado. Algunos sitios (como Wordwall) no permiten mostrarse dentro de otras páginas por seguridad.
         </div>
       </div>
+    </div>
+  );
+}
+
+function RoleplayHub({ data, setData, sessionUser }) {
+  const roleplay = useMemo(() => normalizeRoleplay(data.roleplay), [data.roleplay]);
+  const [selectedRole, setSelectedRole] = useState("asesor");
+  const [joinCode, setJoinCode] = useState("");
+  const [activeSessionId, setActiveSessionId] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState("");
+  const [recorded, setRecorded] = useState({});
+  const mySessions = useMemo(() => (data.roleplaySessions || []).filter((s) => sessionHasUser(s, sessionUser)), [data.roleplaySessions, sessionUser]);
+  const currentSession = (data.roleplaySessions || []).find((s) => s.id === activeSessionId) || mySessions[0] || null;
+
+  useEffect(() => {
+    if (!activeSessionId && mySessions[0]) setActiveSessionId(mySessions[0].id);
+  }, [mySessions, activeSessionId]);
+
+  const recordUse = async (roleKey, resourceId, eventType = "open", sessionId = "") => {
+    const localKey = `${roleKey}-${resourceId}-${eventType}-${sessionId}`;
+    if (recorded[localKey]) return;
+    setRecorded((prev) => ({ ...prev, [localKey]: true }));
+    try {
+      const saved = await recordRoleplayEvent(sessionUser, roleKey, resourceId, eventType, sessionId);
+      setData((prev) => upsertLocalRoleplayEvent(prev, saved));
+    } catch (e) {
+      console.warn("roleplay event:", e);
+    }
+  };
+  const createSession = async () => {
+    setBusy(true);
+    setMsg("");
+    try {
+      const now = new Date().toISOString();
+      const saved = await saveRoleplaySession({
+        id: uid(),
+        code: makeJoinCode(),
+        roleType: "asesor",
+        ownerUserId: sessionUser.id,
+        ownerName: sessionUser.name,
+        status: "open",
+        participants: [{
+          userId: sessionUser.id,
+          userName: sessionUser.name,
+          assignedRoleId: "asesor",
+          assignedRole: "Asesor",
+          guide: "Facilita la práctica y acompaña a quienes interpretan los casos.",
+          isFacilitator: true,
+          joinedAt: now,
+        }],
+      });
+      setData((prev) => upsertLocalRoleplaySession(prev, saved));
+      setActiveSessionId(saved.id);
+      setSelectedRole("asesor");
+      setMsg(`Sesión creada. Comparte el código ${saved.code}.`);
+    } catch {
+      setMsg("No se pudo crear la sesión. Revisa que la tabla roleplay_sessions exista en Supabase.");
+    } finally {
+      setBusy(false);
+    }
+  };
+  const joinSession = async () => {
+    const code = joinCode.trim().toUpperCase();
+    if (!code) return;
+    setBusy(true);
+    setMsg("");
+    try {
+      const rows = await sbFetch(`roleplay_sessions?code=eq.${encodeURIComponent(code)}&select=*`);
+      const found = mapRoleplaySessions(rows)[0];
+      if (!found) {
+        setMsg("No encontramos una sesión con ese código.");
+        return;
+      }
+      if (found.status === "closed") {
+        setMsg("Esa sesión ya está cerrada.");
+        return;
+      }
+      let next = found;
+      if (!sessionHasUser(found, sessionUser)) {
+        const assigned = nextAscosType(found.participants || [], roleplay.participantTypes);
+        next = {
+          ...found,
+          participants: [...(found.participants || []), {
+            userId: sessionUser.id,
+            userName: sessionUser.name,
+            assignedRoleId: assigned.id,
+            assignedRole: assigned.name,
+            guide: assigned.guide || "",
+            isFacilitator: false,
+            joinedAt: new Date().toISOString(),
+          }],
+        };
+        next = await saveRoleplaySession(next);
+      }
+      setData((prev) => upsertLocalRoleplaySession(prev, next));
+      setActiveSessionId(next.id);
+      setSelectedRole("asesor");
+      setJoinCode("");
+      setMsg("Te uniste a la sesión. Revisa el rol que te tocó.");
+    } catch {
+      setMsg("No se pudo unir a la sesión. Revisa tu conexión e inténtalo de nuevo.");
+    } finally {
+      setBusy(false);
+    }
+  };
+  const closeSession = async (session) => {
+    setBusy(true);
+    setMsg("");
+    try {
+      const saved = await saveRoleplaySession({ ...session, status: "closed" });
+      setData((prev) => upsertLocalRoleplaySession(prev, saved));
+      setMsg("Sesión cerrada.");
+    } catch {
+      setMsg("No se pudo cerrar la sesión.");
+    } finally {
+      setBusy(false);
+    }
+  };
+  const renderResources = (roleKey) => {
+    const resources = roleplay[roleKey]?.resources || [];
+    if (!resources.length) return <div className="empty empty--compact">Todavía no hay recursos asignados para este rol.</div>;
+    return (
+      <div className="role-resource-cards">
+        {resources.map((r) => (
+          <div key={r.id} className={`card role-user-resource role-user-resource--${r.type}`}>
+            <div>
+              <div className="role-resource-type">{r.type === "audio" ? "Audio" : r.type === "file" ? "PDF" : "Wordwall"}</div>
+              <div className="role-resource-title">{r.label || "Recurso"}</div>
+              {r.note && <div className="dim" style={{ fontSize: 13 }}>{r.note}</div>}
+            </div>
+            {r.type === "audio" ? (
+              <audio controls src={r.url} onPlay={() => recordUse(roleKey, r.id, "play")} />
+            ) : (
+              <a className="btn btn--gold btn--sm" href={r.url} target="_blank" rel="noreferrer" onClick={() => recordUse(roleKey, r.id, "open")}>
+                Abrir
+              </a>
+            )}
+          </div>
+        ))}
+      </div>
+    );
+  };
+
+  return (
+    <div className="roleplay-hub">
+      <div className="card roleplay-hero">
+        <div>
+          <div className="dash-eyebrow">Preparación práctica</div>
+          <div className="dash-title">Juego de roles</div>
+          <div className="dim">Elige tu rol para practicar con sesiones, juegos o materiales asignados por el equipo.</div>
+        </div>
+        <div className="join-box">
+          <input className="inp inp--sm" value={joinCode} onChange={(e) => setJoinCode(e.target.value.toUpperCase())} onKeyDown={(e) => e.key === "Enter" && joinSession()} placeholder="Código de sesión" />
+          <button className="btn btn--teal-o btn--sm" onClick={joinSession} disabled={busy || !joinCode.trim()}>Unirme</button>
+        </div>
+      </div>
+      {msg && <div className="toast toast--ok">{msg}</div>}
+
+      <div className="role-selector">
+        {ROLEPLAY_ROLES.map((role) => (
+          <button key={role.key} className={`role-select-card ${selectedRole === role.key ? "role-select-card--on" : ""}`} onClick={() => setSelectedRole(role.key)}>
+            <b>{role.label}</b>
+            <span>{role.hint}</span>
+          </button>
+        ))}
+      </div>
+
+      {selectedRole === "asesor" ? (
+        <div className="roleplay-grid">
+          <div className="card role-session-panel">
+            <div className="dash-panel-head">
+              <div>
+                <div className="dash-panel-title">Sesión de práctica</div>
+                <div className="dim">Crea una sesión y comparte el código. Tú quedas como asesor; quienes entren reciben un caso del manual.</div>
+              </div>
+              <button className="btn btn--gold btn--sm" onClick={createSession} disabled={busy}>Crear sesión</button>
+            </div>
+            {currentSession ? (
+              <>
+                <div className="session-code-box">
+                  <span>Código</span>
+                  <b>{currentSession.code}</b>
+                  <button className="btn btn--ghost btn--sm" onClick={() => navigator.clipboard?.writeText(currentSession.code)}>Copiar</button>
+                </div>
+                <div className="session-people">
+                  {(currentSession.participants || []).map((p) => (
+                    <div key={p.userId || p.userName} className={`session-person ${p.userId === sessionUser.id ? "session-person--me" : ""}`}>
+                      <span className="avatar avatar--xs">{initials(p.userName || "?")}</span>
+                      <span>
+                        <b>{p.userName}</b>
+                        <small>{p.assignedRole}{p.guide ? ` · ${p.guide}` : ""}</small>
+                      </span>
+                    </div>
+                  ))}
+                </div>
+                {currentSession.ownerUserId === sessionUser.id && currentSession.status !== "closed" && (
+                  <button className="btn btn--ghost btn--sm" onClick={() => closeSession(currentSession)} disabled={busy}>Cerrar sesión</button>
+                )}
+              </>
+            ) : (
+              <div className="empty empty--compact">Aún no tienes una sesión activa. Crea una o únete con un código.</div>
+            )}
+          </div>
+
+          <div className="card role-session-panel">
+            <div className="dash-panel-title">Casos disponibles</div>
+            <div className="ascos-mini-list">
+              {roleplay.participantTypes.map((t) => (
+                <div key={t.id} className="ascos-mini-item">
+                  <b>{t.name}</b>
+                  <span>{t.guide}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      ) : (
+        <div className="card role-resource-panel">
+          <div className="dash-panel-head">
+            <div>
+              <div className="dash-panel-title">{roleLabel(selectedRole)}</div>
+              <div className="dim">{selectedRole === "coordinador" ? "Materiales para consultar antes y durante el retiro." : "Juegos prácticos asignados por administración."}</div>
+            </div>
+          </div>
+          {renderResources(selectedRole)}
+        </div>
+      )}
     </div>
   );
 }
@@ -3592,7 +4323,7 @@ function ProfileCard({ user, data, onClose, onLogout }) {
   const myStats = useMemo(() => {
     if (!user.linkedCanon) return null;
     const cons = buildConsolidated(data.exercises, data.aliases, data.excluded);
-    return cons.find((s) => norm(s.canon) === norm(user.linkedCanon)) || null;
+    return cons.find((s) => norm(s.canon) === norm(user.linkedCanon)) || emptyConsolidatedStats(user.linkedCanon, data.exercises || []);
   }, [user, data]);
   return (
     <div className="overlay" onClick={onClose}>
@@ -3611,8 +4342,8 @@ function ProfileCard({ user, data, onClose, onLogout }) {
         {myStats ? (
           <div className="profile-stats">
             <div className="pstat"><span className="pstat-n t-gold">{formatChampionshipPoints(myStats.points)}</span><span className="pstat-l">pts campeonato</span></div>
-            <div className="pstat"><span className="pstat-n">{myStats.rank}º</span><span className="pstat-l">en la tabla</span></div>
-            <div className="pstat"><span className="pstat-n">{myStats.played}</span><span className="pstat-l">juego{myStats.played === 1 ? "" : "s"}</span></div>
+            <div className="pstat"><span className="pstat-n">{myStats.rank ? `${myStats.rank}º` : "—"}</span><span className="pstat-l">en la tabla</span></div>
+            <div className="pstat"><span className="pstat-n">{myStats.played}/{myStats.totalGames || myStats.played}</span><span className="pstat-l">juegos</span></div>
             <div className="pstat"><span className="pstat-n">{myStats.correct}/{myStats.total}</span><span className="pstat-l">aciertos</span></div>
           </div>
         ) : (
@@ -3847,6 +4578,9 @@ export default function App() {
             <button className={`mode-btn ${mode === "podio" ? "mode-btn--on" : ""}`} onClick={() => setMode("podio")}>
               🏆 Podio y Resultados
             </button>
+            <button className={`mode-btn ${mode === "roles" ? "mode-btn--on" : ""}`} onClick={() => setMode("roles")}>
+              Juego de roles
+            </button>
             <button className="mode-btn" onClick={() => setShowQuestionBox(true)}>
               💬 Buzón de preguntas
             </button>
@@ -3862,6 +4596,10 @@ export default function App() {
               onOpenBlock={handleOpenBlock}
               onAudioProgress={handleAudioProgress}
             />
+          )}
+
+          {mode === "roles" && (
+            <RoleplayHub data={data} setData={setData} sessionUser={sessionUser} />
           )}
 
           {mode === "podio" && (
@@ -4182,7 +4920,7 @@ const CSS = `
 .podium-name{font-family:var(--disp);font-size:clamp(17px,3vw,25px);letter-spacing:.5px;
   line-height:1.05;word-break:break-word;text-transform:uppercase;font-style:italic;
   max-width:100%;position:relative;z-index:2}
-.podium-main{font-family:var(--mono);font-weight:700;font-variant-numeric:tabular-nums;font-size:36px;
+.podium-main{font-family:var(--mono);font-weight:700;font-variant-numeric:tabular-nums;font-size:28px;
   line-height:1;display:flex;align-items:baseline;justify-content:center;gap:5px;margin-top:2px;
   filter:drop-shadow(0 2px 10px #00000066)}
 .podium-unit{font-size:10px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;
@@ -4311,11 +5049,11 @@ kbd{background:var(--card2);border:1px solid var(--line2);border-bottom-width:2p
 .t-num{font-family:var(--mono);font-variant-numeric:tabular-nums}
 .th-hl{color:var(--gold)!important}
 .td-champ{padding-left:12px}
-.champ-pill{display:inline-flex;align-items:center;justify-content:center;min-width:40px;height:30px;
-  padding:0 10px;border-radius:9px;font-family:var(--disp);font-style:italic;font-size:19px;
-  background:linear-gradient(180deg,var(--gold2),var(--gold));color:#241800;
-  box-shadow:0 3px 12px #FFC53133, inset 0 1px 0 #fff8;font-variant-numeric:tabular-nums}
-tr.row--top .champ-pill{box-shadow:0 4px 16px #FFC53155, inset 0 1px 0 #fff8}
+.champ-pill{display:inline-flex;align-items:center;justify-content:center;min-width:34px;height:26px;
+  padding:0 9px;border-radius:8px;font-family:var(--mono);font-size:13.5px;font-weight:900;
+  background:#FFC53118;color:var(--gold2);border:1px solid #FFC53155;
+  box-shadow:none;font-variant-numeric:tabular-nums}
+tr.row--top .champ-pill{background:#FFC53124;border-color:#FFC53177}
 .rank-badge{display:inline-flex;align-items:center;justify-content:center;width:34px;height:34px;
   border-radius:10px;font-size:16px;font-weight:800;font-family:var(--disp);font-style:italic}
 .rb-n{background:var(--card2);border:1px solid var(--line2);color:var(--dim)}
@@ -4677,7 +5415,7 @@ button:focus-visible,.inp:focus-visible{outline:2px solid var(--turf);outline-of
 .res-list{display:flex;flex-wrap:wrap;gap:10px}
 .res-btn{display:flex;align-items:center;gap:10px;padding:11px 15px;border-radius:12px;cursor:pointer;
   border:1px solid var(--line2);background:linear-gradient(180deg,var(--card2),var(--card));transition:var(--tr);
-  font-family:var(--body);color:var(--text);text-align:left}
+  font-family:var(--body);color:var(--text);text-align:left;text-decoration:none}
 .res-btn:hover{transform:translateY(-2px);box-shadow:0 8px 22px #00000055}
 .res-btn--game:hover{border-color:var(--turf)}
 .res-btn--video:hover{border-color:var(--hot)}
@@ -4745,6 +5483,45 @@ button:focus-visible,.inp:focus-visible{outline:2px solid var(--turf);outline-of
 .ppt-input-group{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:8px}
 .ppt-upload-btn{cursor:pointer;position:relative}
 
+/* juego de roles */
+.roleplay-hub,.role-admin{display:grid;gap:16px}
+.roleplay-hero{display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap}
+.join-box{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.join-box .inp{width:180px;text-transform:uppercase;font-family:var(--mono);font-weight:900;letter-spacing:1px}
+.role-selector{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}
+.role-select-card{border:1px solid var(--line);background:linear-gradient(180deg,var(--card2),var(--card));color:var(--text);
+  border-radius:12px;padding:14px;text-align:left;cursor:pointer;transition:var(--tr);display:grid;gap:5px;min-height:112px}
+.role-select-card:hover{transform:translateY(-2px);border-color:var(--line2)}
+.role-select-card--on{border-color:var(--turf);box-shadow:0 0 0 1px #16DB9344,0 10px 30px #16DB9312}
+.role-select-card b{font-size:16px}
+.role-select-card span{font-size:12.5px;color:var(--dim);line-height:1.35}
+.roleplay-grid,.role-admin-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.role-admin-card-wide{grid-column:1/-1}
+.role-session-panel,.role-resource-panel{display:grid;gap:14px}
+.session-code-box{display:flex;align-items:center;gap:12px;background:var(--bg0);border:1px solid var(--line2);border-radius:12px;padding:14px;flex-wrap:wrap}
+.session-code-box span{font-family:var(--mono);font-size:11px;text-transform:uppercase;letter-spacing:1.4px;color:var(--dim)}
+.session-code-box b{font-family:var(--disp);font-style:italic;font-size:34px;color:var(--gold);letter-spacing:2px}
+.session-people{display:grid;gap:8px}
+.session-person{display:flex;gap:10px;align-items:flex-start;border:1px solid var(--line);background:var(--bg0);border-radius:11px;padding:10px 12px}
+.session-person--me{border-color:#16DB9366;background:#16DB930f}
+.session-person span:last-child{display:grid;gap:2px}
+.session-person small{color:var(--dim);font-size:12px;line-height:1.35}
+.ascos-mini-list,.ascos-edit-list,.role-resource-list{display:grid;gap:8px}
+.ascos-mini-item{border:1px solid var(--line);background:var(--bg0);border-radius:10px;padding:10px 12px;display:grid;gap:4px}
+.ascos-mini-item span{font-size:12px;color:var(--dim);line-height:1.35}
+.ascos-edit-row,.role-resource-row{display:flex;align-items:center;gap:8px;background:var(--bg0);border:1px solid var(--line);border-radius:10px;padding:8px;flex-wrap:wrap}
+.ascos-guide{flex:1;min-width:260px}
+.role-resource-url{flex:1;min-width:240px}
+.role-resource-cards{display:grid;gap:10px}
+.role-user-resource{display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap}
+.role-user-resource audio{min-width:260px;max-width:100%}
+.role-resource-type{font-family:var(--mono);font-size:11px;text-transform:uppercase;letter-spacing:1.4px;color:var(--turf);font-weight:900}
+.role-resource-title{font-size:17px;font-weight:900}
+.role-usage-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}
+.role-usage-card{background:var(--bg0);border:1px solid var(--line);border-radius:10px;padding:12px;display:grid;gap:5px}
+.role-usage-card b{font-size:14px}
+.role-usage-card span{font-size:12px;color:var(--dim)}
+
 @media (prefers-reduced-motion: reduce){
   *,*::before,*::after{animation:none!important;transition:none!important}
 }
@@ -4776,5 +5553,10 @@ button:focus-visible,.inp:focus-visible{outline:2px solid var(--turf);outline-of
   .auth-grid{grid-template-columns:1fr}
   .profile-stats{grid-template-columns:repeat(2,1fr)}
   .user-fields{grid-template-columns:1fr}
+  .role-selector,.roleplay-grid,.role-admin-grid,.role-usage-grid{grid-template-columns:1fr}
+  .roleplay-hero{align-items:flex-start}
+  .join-box .inp{width:100%}
+  .join-box{width:100%}
+  .role-user-resource audio{min-width:0;width:100%}
 }
 `;
