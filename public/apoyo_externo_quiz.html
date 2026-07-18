@@ -1,0 +1,722 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Quiz - Apoyo Externo</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@400;600;700;800&display=swap');
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: 'Poppins', sans-serif;
+    background: #0f1a3a;
+    color: #fff;
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  .grass-bg {
+    position: fixed; bottom: 0; left: 0; right: 0; height: 120px;
+    background: linear-gradient(180deg, #3aaf6a 0%, #2d8f56 100%);
+    border-radius: 50% 50% 0 0 / 40px 40px 0 0;
+    z-index: 0;
+  }
+
+  .container {
+    max-width: 720px;
+    margin: 0 auto;
+    padding: 24px 16px 140px;
+    position: relative;
+    z-index: 1;
+  }
+
+  .header {
+    text-align: center;
+    margin-bottom: 24px;
+  }
+
+  .header h1 {
+    font-size: 1.6rem;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 2px;
+    background: linear-gradient(135deg, #ff6b6b, #ffd93d, #6bcb77);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+
+  .header .subtitle {
+    font-size: 0.85rem;
+    color: #8ea4cc;
+    margin-top: 4px;
+  }
+
+  .progress-bar {
+    background: rgba(255,255,255,0.1);
+    border-radius: 20px;
+    height: 12px;
+    margin-bottom: 20px;
+    overflow: hidden;
+  }
+
+  .progress-fill {
+    height: 100%;
+    background: linear-gradient(90deg, #6bcb77, #ffd93d);
+    border-radius: 20px;
+    transition: width 0.5s ease;
+  }
+
+  .score-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 16px;
+    font-size: 0.85rem;
+    color: #8ea4cc;
+  }
+
+  .score-row .score {
+    font-weight: 700;
+    color: #ffd93d;
+    font-size: 1rem;
+  }
+
+  .card {
+    background: rgba(255,255,255,0.07);
+    border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 16px;
+    padding: 28px 24px;
+    backdrop-filter: blur(8px);
+    animation: fadeUp 0.4s ease;
+  }
+
+  @keyframes fadeUp {
+    from { opacity: 0; transform: translateY(20px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  .badge {
+    display: inline-block;
+    padding: 4px 14px;
+    border-radius: 20px;
+    font-size: 0.7rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    margin-bottom: 14px;
+  }
+
+  .badge.mc { background: #6bcb77; color: #0f1a3a; }
+  .badge.order { background: #ffd93d; color: #0f1a3a; }
+  .badge.match { background: #ff6b6b; color: #fff; }
+  .badge.tf { background: #45b7d1; color: #0f1a3a; }
+
+  .question-text {
+    font-size: 1.05rem;
+    font-weight: 600;
+    line-height: 1.5;
+    margin-bottom: 20px;
+  }
+
+  /* Multiple choice */
+  .options { display: flex; flex-direction: column; gap: 10px; }
+
+  .option-btn {
+    background: rgba(255,255,255,0.06);
+    border: 2px solid rgba(255,255,255,0.15);
+    border-radius: 12px;
+    padding: 14px 18px;
+    color: #fff;
+    font-family: 'Poppins', sans-serif;
+    font-size: 0.9rem;
+    cursor: pointer;
+    transition: all 0.25s;
+    text-align: left;
+  }
+
+  .option-btn:hover:not(.locked) {
+    border-color: #ffd93d;
+    background: rgba(255,215,61,0.1);
+  }
+
+  .option-btn.correct {
+    border-color: #6bcb77;
+    background: rgba(107,203,119,0.2);
+  }
+
+  .option-btn.wrong {
+    border-color: #ff6b6b;
+    background: rgba(255,107,107,0.15);
+  }
+
+  /* True/False */
+  .tf-row { display: flex; gap: 12px; }
+  .tf-btn {
+    flex: 1;
+    padding: 16px;
+    border-radius: 12px;
+    border: 2px solid rgba(255,255,255,0.15);
+    background: rgba(255,255,255,0.06);
+    color: #fff;
+    font-family: 'Poppins', sans-serif;
+    font-size: 1rem;
+    font-weight: 700;
+    cursor: pointer;
+    transition: all 0.25s;
+  }
+
+  .tf-btn:hover:not(.locked) { border-color: #45b7d1; background: rgba(69,183,209,0.1); }
+  .tf-btn.correct { border-color: #6bcb77; background: rgba(107,203,119,0.2); }
+  .tf-btn.wrong { border-color: #ff6b6b; background: rgba(255,107,107,0.15); }
+
+  /* Ordering */
+  .order-list { display: flex; flex-direction: column; gap: 8px; }
+
+  .order-item {
+    display: flex; align-items: center; gap: 12px;
+    background: rgba(255,255,255,0.06);
+    border: 2px solid rgba(255,255,255,0.12);
+    border-radius: 12px;
+    padding: 12px 14px;
+    cursor: grab;
+    transition: all 0.2s;
+    user-select: none;
+  }
+
+  .order-item:active { cursor: grabbing; }
+  .order-item.dragging { opacity: 0.5; border-color: #ffd93d; }
+  .order-item .num {
+    background: rgba(255,255,255,0.12);
+    border-radius: 8px;
+    width: 32px; height: 32px;
+    display: flex; align-items: center; justify-content: center;
+    font-weight: 700; font-size: 0.85rem; flex-shrink: 0;
+  }
+
+  .order-item .label { font-size: 0.85rem; }
+
+  .check-btn {
+    margin-top: 16px;
+    width: 100%;
+    padding: 14px;
+    border-radius: 12px;
+    border: none;
+    background: linear-gradient(135deg, #ffd93d, #ff9f43);
+    color: #0f1a3a;
+    font-family: 'Poppins', sans-serif;
+    font-size: 0.95rem;
+    font-weight: 700;
+    cursor: pointer;
+    transition: transform 0.15s;
+  }
+
+  .check-btn:hover { transform: scale(1.02); }
+  .check-btn:disabled { opacity: 0.4; cursor: not-allowed; transform: none; }
+
+  /* Match */
+  .match-area { display: flex; gap: 16px; flex-wrap: wrap; justify-content: center; }
+
+  .match-col { flex: 1; min-width: 200px; display: flex; flex-direction: column; gap: 8px; }
+
+  .match-item {
+    padding: 12px 14px;
+    border-radius: 10px;
+    border: 2px solid rgba(255,255,255,0.15);
+    background: rgba(255,255,255,0.06);
+    font-size: 0.8rem;
+    cursor: pointer;
+    transition: all 0.2s;
+    text-align: center;
+  }
+
+  .match-item:hover:not(.locked):not(.matched) { border-color: #ff6b6b; background: rgba(255,107,107,0.1); }
+  .match-item.selected { border-color: #ff6b6b; background: rgba(255,107,107,0.2); box-shadow: 0 0 12px rgba(255,107,107,0.3); }
+  .match-item.matched { border-color: #6bcb77; background: rgba(107,203,119,0.15); opacity: 0.7; cursor: default; }
+  .match-item.wrong-flash { animation: wrongShake 0.4s ease; }
+
+  @keyframes wrongShake {
+    0%,100% { transform: translateX(0); }
+    25% { transform: translateX(-6px); }
+    75% { transform: translateX(6px); }
+  }
+
+  .match-col-label {
+    font-size: 0.7rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: #8ea4cc;
+    text-align: center;
+    margin-bottom: 4px;
+  }
+
+  /* Feedback */
+  .feedback {
+    margin-top: 16px;
+    padding: 12px 16px;
+    border-radius: 10px;
+    font-size: 0.85rem;
+    font-weight: 600;
+    animation: fadeUp 0.3s ease;
+  }
+
+  .feedback.good { background: rgba(107,203,119,0.15); border-left: 4px solid #6bcb77; }
+  .feedback.bad { background: rgba(255,107,107,0.12); border-left: 4px solid #ff6b6b; }
+
+  /* Results */
+  .results { text-align: center; }
+  .results .big-score { font-size: 4rem; font-weight: 800; color: #ffd93d; }
+  .results .label { color: #8ea4cc; font-size: 0.9rem; margin-bottom: 24px; }
+  .results .message { font-size: 1.1rem; font-weight: 600; margin-bottom: 8px; }
+  .results .emoji { font-size: 3rem; margin-bottom: 16px; }
+
+  .restart-btn {
+    margin-top: 20px;
+    padding: 14px 40px;
+    border-radius: 12px;
+    border: none;
+    background: linear-gradient(135deg, #6bcb77, #45b7d1);
+    color: #0f1a3a;
+    font-family: 'Poppins', sans-serif;
+    font-size: 1rem;
+    font-weight: 700;
+    cursor: pointer;
+  }
+
+  .next-btn {
+    margin-top: 14px;
+    padding: 12px 28px;
+    border-radius: 10px;
+    border: 2px solid rgba(255,255,255,0.2);
+    background: transparent;
+    color: #fff;
+    font-family: 'Poppins', sans-serif;
+    font-size: 0.85rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+
+  .next-btn:hover { border-color: #ffd93d; color: #ffd93d; }
+
+  .start-screen { text-align: center; padding: 40px 20px; }
+  .start-screen .icon { font-size: 4rem; margin-bottom: 16px; }
+  .start-screen p { color: #8ea4cc; margin: 12px 0; font-size: 0.9rem; line-height: 1.6; }
+
+  .start-btn {
+    margin-top: 20px;
+    padding: 16px 48px;
+    border-radius: 14px;
+    border: none;
+    background: linear-gradient(135deg, #ff6b6b, #ffd93d);
+    color: #0f1a3a;
+    font-family: 'Poppins', sans-serif;
+    font-size: 1.1rem;
+    font-weight: 800;
+    cursor: pointer;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+  }
+</style>
+</head>
+<body>
+<div class="grass-bg"></div>
+<div class="container" id="app"></div>
+
+<script>
+const QUESTIONS = [
+  {
+    type: 'tf',
+    question: '¿Verdadero o Falso? Cada actividad del Apoyo Externo debe tener un responsable y un backup coordinados con anticipación.',
+    answer: true,
+    feedback_good: '¡Exacto! Responsable + Backup es la regla de oro.',
+    feedback_bad: '¡Falso! Siempre se necesita un responsable Y un backup.'
+  },
+  {
+    type: 'mc',
+    question: '¿Con qué inicia el día para los servidores de Apoyo Externo?',
+    options: ['Un desayuno en equipo', 'Un Rosario', 'Una reunión de coordinación', 'Preparación de materiales'],
+    answer: 1,
+    feedback_good: '¡Correcto! El día arranca con un Rosario.',
+    feedback_bad: 'El día siempre inicia con un Rosario.'
+  },
+  {
+    type: 'mc',
+    question: '¿Qué deben portar todos los servidores de Apoyo Externo?',
+    options: ['Un polo rojo', 'Su Biblia', 'Su pescadito', 'Un walkie-talkie'],
+    answer: 2,
+    feedback_good: '¡Sí! El pescadito es obligatorio para todo servidor.',
+    feedback_bad: 'Todos deben portar su pescadito.'
+  },
+  {
+    type: 'mc',
+    question: '¿A qué hora inicia la recepción de participantes el viernes?',
+    options: ['1:30 PM', '3:00 PM', '4:00 PM', '5:00 PM'],
+    answer: 2,
+    feedback_good: '¡Correcto! 4:00 PM — puerta, mesa, solapines y maletas.',
+    feedback_bad: 'La recepción de participantes el viernes es a las 4:00 PM.'
+  },
+  {
+    type: 'order',
+    question: 'Ordena las actividades del VIERNES de la primera a la última:',
+    items: [
+      'Preparación de ambientes y mesa de recepción',
+      'Recepción de participantes',
+      'Carga de maletas y envío en buses',
+      'Entrega de lista final, limpieza y evaluación'
+    ],
+    correctOrder: [0, 1, 2, 3],
+    feedback_good: '¡Perfecto! Tienes clara la secuencia del viernes.',
+    feedback_bad: 'El orden correcto es: Preparación → Recepción → Carga de maletas → Lista final y limpieza.'
+  },
+  {
+    type: 'mc',
+    question: 'El sábado, ¿qué se hace a las 2:00 PM?',
+    options: [
+      'Verificación final de cartas',
+      'Recepción y clasificación de cartas',
+      'Llamadas y recojo a domicilio de cartas faltantes',
+      'Transporte a casa de retiro'
+    ],
+    answer: 2,
+    feedback_good: '¡Correcto! A las 2 PM se llama y recoge cartas faltantes.',
+    feedback_bad: 'A las 2:00 PM del sábado se hacen llamadas y recojo a domicilio de cartas faltantes.'
+  },
+  {
+    type: 'match',
+    question: 'Relaciona cada fase del DOMINGO con su nombre:',
+    left: ['Fase 1', 'Fase 2', 'Fase 3'],
+    right: ['Formación', 'Encuentro y Cierre', 'Apertura'],
+    correctPairs: { 0: 2, 1: 0, 2: 1 },
+    feedback_good: '¡Excelente! Fase 1 = Apertura, Fase 2 = Formación, Fase 3 = Encuentro y Cierre.',
+    feedback_bad: 'Fase 1 = Apertura, Fase 2 = Formación, Fase 3 = Encuentro y Cierre.'
+  },
+  {
+    type: 'tf',
+    question: '¿Verdadero o Falso? La Eucaristía de clausura es a las 4:15 PM.',
+    answer: false,
+    feedback_good: '¡Correcto! La Eucaristía de clausura es a las 5:00 PM.',
+    feedback_bad: 'La Eucaristía de clausura es a las 5:00 PM, no a las 4:15.'
+  },
+  {
+    type: 'mc',
+    question: '¿En qué fase del domingo se hace la entrega de Cartas de Amor?',
+    options: ['Fase 1 — Apertura', 'Fase 2 — Formación', 'Fase 3 — Encuentro y Cierre', 'Se hace el sábado'],
+    answer: 2,
+    feedback_good: '¡Sí! La entrega de Cartas de Amor es en la Fase 3, a las 3:30 PM.',
+    feedback_bad: 'La entrega de Cartas de Amor es en la Fase 3 — Encuentro y Cierre.'
+  },
+  {
+    type: 'order',
+    question: 'Ordena las actividades de la Fase 3 (Domingo) de primera a última:',
+    items: [
+      'Entrega de Cartas de Amor',
+      'Preparación de recibimiento',
+      'Encuentro padres con hijos',
+      'Eucaristía de clausura',
+      'Entrega de maletas en CEBA'
+    ],
+    correctOrder: [0, 1, 2, 3, 4],
+    feedback_good: '¡Impecable! Dominas el cierre del evento.',
+    feedback_bad: 'El orden es: Cartas → Preparación recibimiento → Encuentro → Eucaristía → Entrega maletas.'
+  },
+  {
+    type: 'mc',
+    question: '¿Qué actividad sucede a las 2:10 PM en la Fase 1 del domingo?',
+    options: [
+      'Dinámica de integración',
+      'Vivencia EJE — Joven de Apoyo Externo',
+      'Bienvenida del párroco',
+      'Reglas del compartir'
+    ],
+    answer: 1,
+    feedback_good: '¡Exacto! A las 2:10 PM es la Vivencia EJE.',
+    feedback_bad: 'A las 2:10 PM es la Vivencia EJE — Joven de Apoyo Externo.'
+  },
+  {
+    type: 'tf',
+    question: '¿Verdadero o Falso? El sábado a las 8:00 PM se transporta todo a la casa de retiro para el Ágape.',
+    answer: true,
+    feedback_good: '¡Correcto! A las 8 PM sale el transporte con todo para el Ágape.',
+    feedback_bad: 'Sí es verdadero. A las 8:00 PM del sábado se transporta todo a la casa de retiro.'
+  }
+];
+
+let state = { screen: 'start', current: 0, score: 0, answered: false };
+let shuffledQuestions = [];
+let matchState = {};
+let orderState = [];
+let dragIdx = null;
+
+function shuffle(arr) {
+  const a = [...arr];
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
+
+function startGame() {
+  shuffledQuestions = shuffle(QUESTIONS);
+  state = { screen: 'game', current: 0, score: 0, answered: false };
+  render();
+}
+
+function render() {
+  const app = document.getElementById('app');
+
+  if (state.screen === 'start') {
+    app.innerHTML = `
+      <div class="header">
+        <h1>⚽ Apoyo Externo</h1>
+        <div class="subtitle">Quiz de validación</div>
+      </div>
+      <div class="card start-screen">
+        <div class="icon">🏟️</div>
+        <h2>¿Conoces la cancha?</h2>
+        <p>12 preguntas sobre el timeline y las fases del Apoyo Externo.<br>
+        Demuestra que dominas cada jugada del equipo.</p>
+        <button class="start-btn" onclick="startGame()">¡JUGAR!</button>
+      </div>`;
+    return;
+  }
+
+  if (state.screen === 'results') {
+    const pct = Math.round((state.score / shuffledQuestions.length) * 100);
+    let emoji, msg;
+    if (pct >= 90) { emoji = '🏆'; msg = '¡Crack total! Dominas el Apoyo Externo.'; }
+    else if (pct >= 70) { emoji = '⚽'; msg = '¡Buen partido! Unos detalles por pulir.'; }
+    else if (pct >= 50) { emoji = '🟡'; msg = 'Vas por buen camino, ¡repasa el timeline!'; }
+    else { emoji = '📋'; msg = 'Hay que repasar la presentación. ¡Tú puedes!'; }
+
+    app.innerHTML = `
+      <div class="header">
+        <h1>⚽ Apoyo Externo</h1>
+        <div class="subtitle">Resultados</div>
+      </div>
+      <div class="card results">
+        <div class="emoji">${emoji}</div>
+        <div class="big-score">${state.score}/${shuffledQuestions.length}</div>
+        <div class="label">${pct}% de aciertos</div>
+        <div class="message">${msg}</div>
+        <button class="restart-btn" onclick="startGame()">Jugar de nuevo</button>
+      </div>`;
+    return;
+  }
+
+  const q = shuffledQuestions[state.current];
+  const progress = ((state.current) / shuffledQuestions.length) * 100;
+
+  let badgeClass, badgeText;
+  switch (q.type) {
+    case 'mc': badgeClass = 'mc'; badgeText = 'Selección'; break;
+    case 'tf': badgeClass = 'tf'; badgeText = 'Verdadero / Falso'; break;
+    case 'order': badgeClass = 'order'; badgeText = 'Ordenar'; break;
+    case 'match': badgeClass = 'match'; badgeText = 'Relacionar'; break;
+  }
+
+  let body = '';
+
+  if (q.type === 'mc') {
+    body = `<div class="options">${q.options.map((o, i) =>
+      `<button class="option-btn${state.answered ? ' locked' : ''}" 
+        data-idx="${i}" onclick="answerMC(${i})">${o}</button>`
+    ).join('')}</div>`;
+  }
+
+  if (q.type === 'tf') {
+    body = `<div class="tf-row">
+      <button class="tf-btn${state.answered ? ' locked' : ''}" data-val="true" onclick="answerTF(true)">✅ Verdadero</button>
+      <button class="tf-btn${state.answered ? ' locked' : ''}" data-val="false" onclick="answerTF(false)">❌ Falso</button>
+    </div>`;
+  }
+
+  if (q.type === 'order') {
+    if (!state.answered && orderState.length === 0) {
+      orderState = shuffle(q.items.map((item, i) => ({ text: item, origIdx: i })));
+    }
+    body = `<div class="order-list" id="orderList">
+      ${orderState.map((item, i) => `
+        <div class="order-item" draggable="true" data-idx="${i}"
+          ondragstart="dragStart(event, ${i})" ondragover="dragOver(event)" ondrop="dropItem(event, ${i})"
+          ontouchstart="touchStart(event, ${i})" ontouchmove="touchMove(event)" ontouchend="touchEnd(event, ${i})">
+          <div class="num">${i + 1}</div>
+          <div class="label">${item.text}</div>
+        </div>`).join('')}
+    </div>
+    <button class="check-btn" onclick="checkOrder()">Verificar orden</button>`;
+  }
+
+  if (q.type === 'match') {
+    if (!matchState.pairs) {
+      matchState = {
+        pairs: {},
+        matched: new Set(),
+        selectedLeft: null,
+        rightOrder: shuffle(q.right.map((r, i) => i))
+      };
+    }
+    const leftDone = matchState.matched;
+    body = `<div class="match-area">
+      <div class="match-col">
+        <div class="match-col-label">Fase</div>
+        ${q.left.map((l, i) => `
+          <div class="match-item${matchState.selectedLeft === i ? ' selected' : ''}${leftDone.has(i) ? ' matched locked' : ''}"
+            onclick="selectLeft(${i})">${l}</div>`).join('')}
+      </div>
+      <div class="match-col">
+        <div class="match-col-label">Nombre</div>
+        ${matchState.rightOrder.map(ri => `
+          <div class="match-item${leftDone.has(Object.keys(matchState.pairs).find(k => matchState.pairs[k] === ri)) ? ' matched locked' : ''}"
+            data-ri="${ri}" onclick="selectRight(${ri})">${q.right[ri]}</div>`).join('')}
+      </div>
+    </div>`;
+  }
+
+  app.innerHTML = `
+    <div class="header">
+      <h1>⚽ Apoyo Externo</h1>
+      <div class="subtitle">Quiz de validación</div>
+    </div>
+    <div class="progress-bar"><div class="progress-fill" style="width:${progress}%"></div></div>
+    <div class="score-row">
+      <span>Pregunta ${state.current + 1} de ${shuffledQuestions.length}</span>
+      <span class="score">⭐ ${state.score}</span>
+    </div>
+    <div class="card" id="qcard">
+      <span class="badge ${badgeClass}">${badgeText}</span>
+      <div class="question-text">${q.question}</div>
+      ${body}
+      <div id="feedback"></div>
+      <div id="nextArea"></div>
+    </div>`;
+}
+
+function showFeedback(correct) {
+  const q = shuffledQuestions[state.current];
+  const fb = document.getElementById('feedback');
+  const na = document.getElementById('nextArea');
+  fb.innerHTML = `<div class="feedback ${correct ? 'good' : 'bad'}">${correct ? q.feedback_good : q.feedback_bad}</div>`;
+  na.innerHTML = `<button class="next-btn" onclick="nextQ()">Siguiente →</button>`;
+  if (correct) state.score++;
+  state.answered = true;
+}
+
+function nextQ() {
+  state.current++;
+  state.answered = false;
+  orderState = [];
+  matchState = {};
+  if (state.current >= shuffledQuestions.length) {
+    state.screen = 'results';
+  }
+  render();
+}
+
+function answerMC(idx) {
+  if (state.answered) return;
+  const q = shuffledQuestions[state.current];
+  const correct = idx === q.answer;
+  const btns = document.querySelectorAll('.option-btn');
+  btns.forEach(b => {
+    b.classList.add('locked');
+    const i = parseInt(b.dataset.idx);
+    if (i === q.answer) b.classList.add('correct');
+    else if (i === idx) b.classList.add('wrong');
+  });
+  showFeedback(correct);
+}
+
+function answerTF(val) {
+  if (state.answered) return;
+  const q = shuffledQuestions[state.current];
+  const correct = val === q.answer;
+  const btns = document.querySelectorAll('.tf-btn');
+  btns.forEach(b => {
+    b.classList.add('locked');
+    const bv = b.dataset.val === 'true';
+    if (bv === q.answer) b.classList.add('correct');
+    else if (bv === val) b.classList.add('wrong');
+  });
+  showFeedback(correct);
+}
+
+// Drag and drop for ordering
+function dragStart(e, idx) { dragIdx = idx; e.target.classList.add('dragging'); }
+function dragOver(e) { e.preventDefault(); }
+function dropItem(e, targetIdx) {
+  e.preventDefault();
+  if (dragIdx === null || dragIdx === targetIdx) return;
+  const temp = orderState[dragIdx];
+  orderState[dragIdx] = orderState[targetIdx];
+  orderState[targetIdx] = temp;
+  dragIdx = null;
+  render();
+}
+
+// Touch support for mobile drag
+let touchStartY = 0;
+let touchIdx = null;
+function touchStart(e, idx) { touchStartY = e.touches[0].clientY; touchIdx = idx; }
+function touchMove(e) { e.preventDefault(); }
+function touchEnd(e, idx) {
+  const endY = e.changedTouches[0].clientY;
+  const diff = endY - touchStartY;
+  if (Math.abs(diff) > 30 && touchIdx !== null) {
+    const dir = diff > 0 ? 1 : -1;
+    const newIdx = Math.max(0, Math.min(orderState.length - 1, touchIdx + dir));
+    if (newIdx !== touchIdx) {
+      const temp = orderState[touchIdx];
+      orderState[touchIdx] = orderState[newIdx];
+      orderState[newIdx] = temp;
+      render();
+    }
+  }
+  touchIdx = null;
+}
+
+function checkOrder() {
+  if (state.answered) return;
+  const q = shuffledQuestions[state.current];
+  const correct = orderState.every((item, i) => item.origIdx === q.correctOrder[i]);
+  state.answered = true;
+  showFeedback(correct);
+}
+
+// Match logic
+function selectLeft(idx) {
+  if (state.answered || matchState.matched.has(idx)) return;
+  matchState.selectedLeft = idx;
+  render();
+}
+
+function selectRight(ri) {
+  if (state.answered || matchState.selectedLeft === null) return;
+  const q = shuffledQuestions[state.current];
+  const li = matchState.selectedLeft;
+  if (q.correctPairs[li] === ri) {
+    matchState.matched.add(li);
+    matchState.pairs[li] = ri;
+    matchState.selectedLeft = null;
+    if (matchState.matched.size === q.left.length) {
+      state.answered = true;
+      render();
+      showFeedback(true);
+      return;
+    }
+    render();
+  } else {
+    matchState.selectedLeft = null;
+    const rightItems = document.querySelectorAll(`.match-col:last-child .match-item[data-ri="${ri}"]`);
+    rightItems.forEach(el => { el.classList.add('wrong-flash'); setTimeout(() => el.classList.remove('wrong-flash'), 400); });
+    render();
+  }
+}
+
+render();
+</script>
+</body>
+</html>
