@@ -59,6 +59,43 @@ const ACCESS_PHRASE_KEY = "firmes en la fe sobre la roca";
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
 const pct = (c, t) => (t ? Math.round((c / t) * 100) : 0);
 const hasMeaningfulAnswer = (s) => phraseKey(s).replace(/[^a-z0-9]/g, "").length >= 2;
+const STORE = {
+  userId: "eje.session.userId",
+  adminOpen: "eje.session.adminOpen",
+  adminTab: "eje.ui.adminTab",
+  mode: "eje.ui.mode",
+  selectedExercise: "eje.ui.selectedExercise",
+  podiumSection: "eje.ui.podiumSection",
+  roleplayRole: "eje.ui.roleplayRole",
+  roleplaySession: "eje.ui.roleplaySession",
+  roleplayHidden: "eje.ui.roleplayHidden",
+};
+function readStore(key, fallback = "") {
+  if (typeof window === "undefined" || !window.localStorage) return fallback;
+  try {
+    const value = window.localStorage.getItem(key);
+    return value == null ? fallback : value;
+  } catch {
+    return fallback;
+  }
+}
+function writeStore(key, value) {
+  if (typeof window === "undefined" || !window.localStorage) return;
+  try {
+    if (value == null || value === "") window.localStorage.removeItem(key);
+    else window.localStorage.setItem(key, String(value));
+  } catch {}
+}
+function readStoreJson(key, fallback) {
+  try {
+    return JSON.parse(readStore(key, ""));
+  } catch {
+    return fallback;
+  }
+}
+function writeStoreJson(key, value) {
+  writeStore(key, JSON.stringify(value));
+}
 const ROLEPLAY_ROLES = [
   { key: "asesor", label: "Asesor", hint: "Crea sesiones de práctica con código y asignación de casos." },
   { key: "apoyo_interno", label: "Apoyo interno", hint: "Practica con juegos asignados por administración." },
@@ -2903,11 +2940,14 @@ function RoleplayAdmin({ data, persist, busy }) {
     if (!file) return;
     const resource = local[roleKey]?.resources?.[idx];
     if (!resource) return;
-    if (resource.type === "audio" && !/^audio\//.test(file.type || "")) {
+    const fileName = String(file.name || "").toLowerCase();
+    const looksAudio = /^audio\//.test(file.type || "") || /\.(mp3|m4a|wav|ogg|aac|opus)$/i.test(fileName);
+    const looksPdf = file.type === "application/pdf" || /\.pdf$/i.test(fileName);
+    if (resource.type === "audio" && !looksAudio) {
       setMsg("El recurso de audio debe ser un archivo de audio.");
       return;
     }
-    if (resource.type === "file" && file.type !== "application/pdf") {
+    if (resource.type === "file" && !looksPdf) {
       setMsg("El archivo del coordinador debe ser PDF.");
       return;
     }
@@ -3087,6 +3127,10 @@ function RoleplayAdmin({ data, persist, busy }) {
               <button className="btn btn--teal-o btn--sm" onClick={() => addResource("coordinador", "audio")}>+ Audio</button>
             </div>
           </div>
+          <div className="admin-helper-strip">
+            <span><b>Audio:</b> + Audio → Subir audio → Guardar juego de roles.</span>
+            <span><b>PDF:</b> + PDF → Subir PDF → Guardar juego de roles.</span>
+          </div>
           {renderResourceRows("coordinador")}
         </div>
       </div>
@@ -3126,7 +3170,7 @@ function RoleplayAdmin({ data, persist, busy }) {
 }
 
 function AdminPanel({ data, setData, onExit }) {
-  const [tab, setTab] = useState("dashboard");
+  const [tab, setTab] = useState(() => readStore(STORE.adminTab, "dashboard"));
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState(null);
   const [parsed, setParsed] = useState(null);
@@ -3137,6 +3181,7 @@ function AdminPanel({ data, setData, onExit }) {
   const [mergeMode, setMergeMode] = useState("new"); // "new" | "merge"
   const [mergeTarget, setMergeTarget] = useState(""); // id del ejercicio a fusionar
   const fileRef = useRef(null);
+  useEffect(() => { writeStore(STORE.adminTab, tab); }, [tab]);
 
   const canonicals = useMemo(() => {
     const set = new Set(Object.values(data.aliases));
@@ -4028,20 +4073,96 @@ function ContentViewer({ resource, onClose }) {
   );
 }
 
+function RoleAudioPlayer({ resource, roleKey, onUse }) {
+  const [progress, setProgress] = useState(0);
+  const [state, setState] = useState(resource.url ? "idle" : "missing");
+  const [error, setError] = useState("");
+  const reported = useRef({});
+  const title = resource.label || "Audio";
+  const src = String(resource.url || "").trim();
+  const report = (eventType) => {
+    const key = `${resource.id}-${eventType}`;
+    if (reported.current[key]) return;
+    reported.current[key] = true;
+    onUse(roleKey, resource.id, eventType);
+  };
+
+  if (!src) {
+    return (
+      <div className="role-audio role-audio--error">
+        <div className="role-audio-title">Audio sin archivo</div>
+        <div className="role-audio-help">El administrador debe subir un audio o pegar un link válido.</div>
+      </div>
+    );
+  }
+
+  return (
+    <div className={`role-audio role-audio--${state}`}>
+      <div className="role-audio-head">
+        <div>
+          <div className="role-audio-title">{title}</div>
+          <div className="role-audio-help">
+            {state === "error"
+              ? error || "No se pudo reproducir este audio en el navegador."
+              : state === "playing"
+                ? "Reproduciendo"
+                : state === "ready"
+                  ? "Listo para escuchar"
+                  : "Cargando audio"}
+          </div>
+        </div>
+        <b>{progress}%</b>
+      </div>
+      <audio
+        controls
+        preload="metadata"
+        src={src}
+        onLoadedMetadata={() => setState("ready")}
+        onPlay={() => { setState("playing"); report("play"); }}
+        onPause={() => setState((prev) => prev === "playing" ? "ready" : prev)}
+        onEnded={() => { setProgress(100); setState("ready"); report("complete"); }}
+        onTimeUpdate={(e) => {
+          const a = e.currentTarget;
+          if (!a.duration || !Number.isFinite(a.duration)) return;
+          setProgress(Math.min(100, Math.round((a.currentTime / a.duration) * 100)));
+        }}
+        onError={() => {
+          setState("error");
+          setError("El archivo no cargó. Prueba abrirlo en otra pestaña o vuelve a subirlo desde administración.");
+        }}
+      />
+      <span className="route-progress-bar"><i style={{ width: `${progress}%` }} /></span>
+      <div className="role-audio-actions">
+        <a className="btn btn--ghost btn--sm" href={src} target="_blank" rel="noreferrer" onClick={() => report("open")}>
+          Abrir audio
+        </a>
+      </div>
+    </div>
+  );
+}
+
 function RoleplayHub({ data, setData, sessionUser }) {
   const roleplay = useMemo(() => normalizeRoleplay(data.roleplay), [data.roleplay]);
-  const [selectedRole, setSelectedRole] = useState("asesor");
+  const [selectedRole, setSelectedRole] = useState(() => readStore(STORE.roleplayRole, "asesor"));
   const [joinCode, setJoinCode] = useState("");
-  const [activeSessionId, setActiveSessionId] = useState("");
+  const [activeSessionId, setActiveSessionId] = useState(() => readStore(STORE.roleplaySession, ""));
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState("");
   const [recorded, setRecorded] = useState({});
+  const [hiddenSessionIds, setHiddenSessionIds] = useState(() => readStoreJson(STORE.roleplayHidden, []));
   const mySessions = useMemo(() => (data.roleplaySessions || []).filter((s) => sessionHasUser(s, sessionUser)), [data.roleplaySessions, sessionUser]);
-  const currentSession = (data.roleplaySessions || []).find((s) => s.id === activeSessionId) || mySessions[0] || null;
+  const activePracticeSessions = useMemo(() =>
+    mySessions.filter((s) => s.status !== "closed" && !hiddenSessionIds.includes(s.id)),
+  [mySessions, hiddenSessionIds]);
+  const currentSession = activePracticeSessions.find((s) => s.id === activeSessionId) || activePracticeSessions[0] || null;
 
   useEffect(() => {
-    if (!activeSessionId && mySessions[0]) setActiveSessionId(mySessions[0].id);
-  }, [mySessions, activeSessionId]);
+    if (!activeSessionId && activePracticeSessions[0]) setActiveSessionId(activePracticeSessions[0].id);
+    if (activeSessionId && !activePracticeSessions.some((s) => s.id === activeSessionId)) setActiveSessionId(activePracticeSessions[0]?.id || "");
+  }, [activePracticeSessions, activeSessionId]);
+  useEffect(() => { writeStore(STORE.roleplayRole, selectedRole); }, [selectedRole]);
+  useEffect(() => { writeStore(STORE.roleplaySession, activeSessionId); }, [activeSessionId]);
+  useEffect(() => { writeStoreJson(STORE.roleplayHidden, hiddenSessionIds); }, [hiddenSessionIds]);
 
   const recordUse = async (roleKey, resourceId, eventType = "open", sessionId = "") => {
     const localKey = `${roleKey}-${resourceId}-${eventType}-${sessionId}`;
@@ -4131,11 +4252,17 @@ function RoleplayHub({ data, setData, sessionUser }) {
     }
   };
   const closeSession = async (session) => {
+    if (session.ownerUserId !== sessionUser.id) {
+      setMsg("Solo quien creó la práctica puede finalizarla.");
+      return;
+    }
     setBusy(true);
     setMsg("");
     try {
       const saved = await saveRoleplaySession({ ...session, status: "closed" });
       setData((prev) => upsertLocalRoleplaySession(prev, saved));
+      setHiddenSessionIds((prev) => prev.includes(saved.id) ? prev : [...prev, saved.id]);
+      setActiveSessionId("");
       setMsg("Sesión cerrada.");
     } catch {
       setMsg("No se pudo cerrar la sesión.");
@@ -4158,7 +4285,7 @@ function RoleplayHub({ data, setData, sessionUser }) {
               {r.note && <div className="dim" style={{ fontSize: 13 }}>{r.note}</div>}
             </div>
             {r.type === "audio" ? (
-              <audio controls src={r.url} onPlay={() => recordUse(roleKey, r.id, "play")} />
+              <RoleAudioPlayer resource={r} roleKey={roleKey} onUse={recordUse} />
             ) : r.type === "materials" ? (
               <button className="btn btn--teal-o btn--sm" onClick={() => recordUse(roleKey, r.id, "review")}>
                 Revisado
@@ -4227,8 +4354,24 @@ function RoleplayHub({ data, setData, sessionUser }) {
                   ))}
                 </div>
                 {currentSession.ownerUserId === sessionUser.id && currentSession.status !== "closed" && (
+                  <button className="btn btn--danger-o btn--sm" onClick={() => closeSession(currentSession)} disabled={busy}>
+                    {busy ? "Finalizando..." : "Finalizar práctica"}
+                  </button>
+                )}
+                {false && currentSession.ownerUserId === sessionUser.id && currentSession.status !== "closed" && (
                   <button className="btn btn--ghost btn--sm" onClick={() => closeSession(currentSession)} disabled={busy}>Cerrar sesión</button>
                 )}
+                <button
+                  className="btn btn--ghost btn--sm"
+                  onClick={() => {
+                    setHiddenSessionIds((prev) => prev.includes(currentSession.id) ? prev : [...prev, currentSession.id]);
+                    setActiveSessionId("");
+                    setMsg("Saliste de esta práctica en tu pantalla.");
+                  }}
+                  disabled={busy}
+                >
+                  Salir de esta práctica
+                </button>
               </>
             ) : (
               <div className="empty empty--compact">Aún no tienes una sesión activa. Crea una o únete con un código.</div>
@@ -4255,6 +4398,20 @@ function RoleplayHub({ data, setData, sessionUser }) {
               <div className="dim">{selectedRole === "coordinador" ? "Materiales para consultar antes y durante el retiro." : "Juegos prácticos asignados por administración."}</div>
             </div>
           </div>
+          {selectedRole === "coordinador" && (
+            <div className="role-journey-strip">
+              <span><b>1</b> Revisa PDFs</span>
+              <span><b>2</b> Escucha audios</span>
+              <span><b>3</b> Usa abrir audio si el navegador bloquea la reproducción</span>
+            </div>
+          )}
+          {selectedRole === "apoyo_interno" && (
+            <div className="role-journey-strip">
+              <span><b>1</b> Ubica el momento</span>
+              <span><b>2</b> Prepara materiales</span>
+              <span><b>3</b> Marca revisado</span>
+            </div>
+          )}
           {renderResources(selectedRole)}
         </div>
       )}
@@ -4447,13 +4604,16 @@ function ProfileCard({ user, data, onClose, onLogout }) {
 export default function App() {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [view, setView] = useState("public");
-  const [mode, setMode] = useState("ruta"); // ruta | podio
-  const [sel, setSel] = useState("consolidado");
-  const [section, setSection] = useState("podio");
+  const [view, setView] = useState(() => readStore(STORE.adminOpen, "") === "1" ? "admin" : "public");
+  const [mode, setMode] = useState(() => {
+    const saved = readStore(STORE.mode, "ruta");
+    return ["ruta", "podio", "roles"].includes(saved) ? saved : "ruta";
+  }); // ruta | podio | roles
+  const [sel, setSel] = useState(() => readStore(STORE.selectedExercise, "consolidado"));
+  const [section, setSection] = useState(() => readStore(STORE.podiumSection, "podio"));
   const [studentModal, setStudentModal] = useState(null);
   const [muted, setMuted] = useState(false);
-  const [sessionUserId, setSessionUserId] = useState(null);
+  const [sessionUserId, setSessionUserId] = useState(() => readStore(STORE.userId, ""));
   const [showProfile, setShowProfile] = useState(false);
   const [showQuestionBox, setShowQuestionBox] = useState(false);
   const [progressBusy, setProgressBusy] = useState(false);
@@ -4462,11 +4622,27 @@ export default function App() {
 
   useEffect(() => {
     (async () => {
-      const d = await loadAuthData();
+      const savedUserId = readStore(STORE.userId, "");
+      const wantsAdmin = readStore(STORE.adminOpen, "") === "1";
+      const d = wantsAdmin || savedUserId ? await loadData() : await loadAuthData();
+      if (d && savedUserId && !(d.users || []).some((u) => u.id === savedUserId)) {
+        writeStore(STORE.userId, "");
+        setSessionUserId("");
+      }
+      if (wantsAdmin) setView("admin");
       setData(d || emptyData());
       setLoading(false);
     })();
   }, []);
+
+  useEffect(() => { writeStore(STORE.userId, sessionUserId); }, [sessionUserId]);
+  useEffect(() => {
+    if (view === "admin") writeStore(STORE.adminOpen, "1");
+    if (view === "public") writeStore(STORE.adminOpen, "");
+  }, [view]);
+  useEffect(() => { writeStore(STORE.mode, mode); }, [mode]);
+  useEffect(() => { writeStore(STORE.selectedExercise, sel); }, [sel]);
+  useEffect(() => { writeStore(STORE.podiumSection, section); }, [section]);
 
   useEffect(() => {
     if (data && sel !== "consolidado" && !data.exercises.find((e) => e.id === sel)) setSel("consolidado");
@@ -4481,6 +4657,7 @@ export default function App() {
 
   const handleLogin = useCallback(async (uid) => {
     setSessionUserId(uid);
+    writeStore(STORE.userId, uid);
     setLoading(true);
     const d = await loadData();
     if (d) setData(d);
@@ -4491,11 +4668,13 @@ export default function App() {
     setLoading(true);
     const d = await loadData();
     if (d) setData(d);
+    writeStore(STORE.adminOpen, "1");
     setView("admin");
     setLoading(false);
   }, []);
 
   const handleAdminExit = useCallback(async () => {
+    writeStore(STORE.adminOpen, "");
     setView("public");
     if (!sessionUserId) {
       const d = await loadAuthData();
@@ -4504,7 +4683,10 @@ export default function App() {
   }, [sessionUserId]);
 
   const handleLogout = useCallback(async () => {
-    setSessionUserId(null);
+    writeStore(STORE.userId, "");
+    writeStore(STORE.roleplaySession, "");
+    writeStoreJson(STORE.roleplayHidden, []);
+    setSessionUserId("");
     setShowProfile(false);
     setShowQuestionBox(false);
     setMode("ruta");
@@ -5583,10 +5765,23 @@ button:focus-visible,.inp:focus-visible{outline:2px solid var(--turf);outline-of
 .inp--time{width:150px;flex:none}
 .role-resource-cards{display:grid;gap:10px}
 .role-user-resource{display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap}
+.role-user-resource--audio{align-items:stretch}
 .role-user-resource audio{min-width:260px;max-width:100%}
 .role-resource-type{font-family:var(--mono);font-size:11px;text-transform:uppercase;letter-spacing:1.4px;color:var(--turf);font-weight:900}
 .role-resource-time{font-family:var(--mono);font-size:12px;color:var(--gold);font-weight:900;margin-top:2px}
 .role-resource-title{font-size:17px;font-weight:900}
+.role-audio{flex:1;min-width:320px;display:grid;gap:9px;background:var(--bg0);border:1px solid var(--line);border-radius:12px;padding:12px}
+.role-audio--playing{border-color:#16DB9366;background:#16DB930f}
+.role-audio--error{border-color:#FF2E6366;background:#FF2E6310}
+.role-audio-head{display:flex;justify-content:space-between;gap:12px;align-items:flex-start}
+.role-audio-title{font-size:14px;font-weight:900}
+.role-audio-help{font-size:12px;color:var(--dim);line-height:1.35}
+.role-audio audio{width:100%;min-width:0}
+.role-audio-actions{display:flex;justify-content:flex-end}
+.role-journey-strip,.admin-helper-strip{display:flex;gap:8px;flex-wrap:wrap;background:var(--bg0);border:1px solid var(--line);border-radius:12px;padding:10px}
+.role-journey-strip span,.admin-helper-strip span{font-size:12px;color:var(--dim);background:#FFFFFF08;border:1px solid #FFFFFF10;border-radius:999px;padding:7px 10px}
+.role-journey-strip b{display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;border-radius:50%;background:var(--turf);color:#03251A;margin-right:5px}
+.admin-helper-strip b{color:var(--gold)}
 .role-usage-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}
 .role-usage-card{background:var(--bg0);border:1px solid var(--line);border-radius:10px;padding:12px;display:grid;gap:5px}
 .role-usage-card b{font-size:14px}
@@ -5628,5 +5823,7 @@ button:focus-visible,.inp:focus-visible{outline:2px solid var(--turf);outline-of
   .join-box .inp{width:100%}
   .join-box{width:100%}
   .role-user-resource audio{min-width:0;width:100%}
+  .role-audio{min-width:0;width:100%}
+  .role-journey-strip span,.admin-helper-strip span{width:100%;border-radius:10px}
 }
 `;
