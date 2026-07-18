@@ -18,6 +18,19 @@ const SB_HEADERS = {
   "Content-Type": "application/json",
 };
 // Helper genérico para la API REST de Supabase (PostgREST)
+function mimeFromFileName(name) {
+  const ext = String(name || "").toLowerCase().split(".").pop();
+  return {
+    mp3: "audio/mpeg",
+    m4a: "audio/mp4",
+    mp4: "audio/mp4",
+    wav: "audio/wav",
+    ogg: "audio/ogg",
+    opus: "audio/ogg",
+    aac: "audio/aac",
+    pdf: "application/pdf",
+  }[ext] || "application/octet-stream";
+}
 async function sbFetch(path, opts = {}) {
   const res = await fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
     ...opts,
@@ -35,12 +48,13 @@ async function sbFetch(path, opts = {}) {
 async function sbUpload(file) {
   const safe = file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
   const path = `${Date.now()}_${safe}`;
+  const contentType = file.type || mimeFromFileName(safe);
   const res = await fetch(`${SUPABASE_URL}/storage/v1/object/presentaciones/${encodeURIComponent(path)}`, {
     method: "POST",
     headers: {
       apikey: SUPABASE_KEY,
       Authorization: `Bearer ${SUPABASE_KEY}`,
-      "Content-Type": file.type || "application/octet-stream",
+      "Content-Type": contentType,
       "x-upsert": "true",
     },
     body: file,
@@ -669,6 +683,21 @@ function youtubeEmbed(url) {
   const u = String(url || "").trim();
   let m = u.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/)([a-zA-Z0-9_-]{11})/);
   if (m) return `https://www.youtube.com/embed/${m[1]}`;
+  return u;
+}
+function directAudioUrl(url) {
+  const u = String(url || "").trim();
+  if (!u) return "";
+  let m = u.match(/drive\.google\.com\/file\/d\/([a-zA-Z0-9_-]+)/);
+  if (!m) m = u.match(/[?&]id=([a-zA-Z0-9_-]{20,})/);
+  if (m && /drive\.google\.com/.test(u)) return `https://drive.google.com/uc?export=download&id=${m[1]}`;
+  return u;
+}
+function drivePreviewUrl(url) {
+  const u = String(url || "").trim();
+  let m = u.match(/drive\.google\.com\/file\/d\/([a-zA-Z0-9_-]+)/);
+  if (!m) m = u.match(/[?&]id=([a-zA-Z0-9_-]{20,})/);
+  if (m && /drive\.google\.com/.test(u)) return `https://drive.google.com/file/d/${m[1]}/preview`;
   return u;
 }
 function iframeSrc(value) {
@@ -2230,7 +2259,9 @@ function RouteEditor({ data, persist, busy }) {
 
   const uploadAudio = async (bi, file) => {
     if (!file) return;
-    if (!/^audio\//.test(file.type || "")) { setUpErr("Debe ser un archivo de audio."); return; }
+    const fileName = String(file.name || "").toLowerCase();
+    const looksAudio = /^audio\//.test(file.type || "") || /\.(mp3|m4a|wav|ogg|aac|opus)$/i.test(fileName);
+    if (!looksAudio) { setUpErr("Debe ser un archivo de audio."); return; }
     setUpErr(null);
     setUploadingAudio(bi);
     try {
@@ -2378,7 +2409,7 @@ function RouteEditor({ data, persist, busy }) {
           <div className="ppt-input-group">
             <label className="btn btn--teal-o btn--sm ppt-upload-btn">
               {uploadingAudio === bi ? "Subiendo audio..." : "Subir audio"}
-              <input type="file" accept="audio/*" style={{ display: "none" }} disabled={uploadingAudio === bi} onChange={(e) => { if (e.target.files[0]) uploadAudio(bi, e.target.files[0]); e.target.value = ""; }} />
+              <input type="file" accept="audio/*,.mp3,.m4a,.wav,.ogg,.aac,.opus" style={{ display: "none" }} disabled={uploadingAudio === bi} onChange={(e) => { if (e.target.files[0]) uploadAudio(bi, e.target.files[0]); e.target.value = ""; }} />
             </label>
             <span className="dim" style={{ fontSize: 12 }}>Si hay asistencia registrada, este audio queda como repaso opcional.</span>
           </div>
@@ -3009,7 +3040,7 @@ function RoleplayAdmin({ data, persist, busy }) {
                 {uploading === `${roleKey}-${idx}` ? "Subiendo..." : r.type === "audio" ? "Subir audio" : "Subir PDF"}
                 <input
                   type="file"
-                  accept={r.type === "audio" ? "audio/*" : "application/pdf"}
+                  accept={r.type === "audio" ? "audio/*,.mp3,.m4a,.wav,.ogg,.aac,.opus" : "application/pdf,.pdf"}
                   style={{ display: "none" }}
                   disabled={uploading === `${roleKey}-${idx}`}
                   onChange={(e) => { if (e.target.files[0]) uploadResource(roleKey, idx, e.target.files[0]); e.target.value = ""; }}
@@ -3130,6 +3161,9 @@ function RoleplayAdmin({ data, persist, busy }) {
           <div className="admin-helper-strip">
             <span><b>Audio:</b> + Audio → Subir audio → Guardar juego de roles.</span>
             <span><b>PDF:</b> + PDF → Subir PDF → Guardar juego de roles.</span>
+          </div>
+          <div className="admin-helper-strip">
+            <span><b>Google Drive:</b> pega el link con permiso "cualquiera con el enlace" y la app lo convierte para reproducir.</span>
           </div>
           {renderResourceRows("coordinador")}
         </div>
@@ -3906,6 +3940,7 @@ function PptFrame({ embedUrl, originalUrl }) {
 function BlockAudio({ url, percent, completed, onAudioProgress }) {
   const [localPercent, setLocalPercent] = useState(percent || 0);
   const reported = useRef(completed);
+  const src = directAudioUrl(url);
   useEffect(() => { setLocalPercent(percent || 0); reported.current = completed; }, [percent, completed]);
   if (!url) return null;
   return (
@@ -3919,7 +3954,7 @@ function BlockAudio({ url, percent, completed, onAudioProgress }) {
       </div>
       <audio
         controls
-        src={url}
+        src={src}
         onTimeUpdate={(e) => {
           const a = e.currentTarget;
           if (!a.duration || !Number.isFinite(a.duration)) return;
@@ -4079,7 +4114,9 @@ function RoleAudioPlayer({ resource, roleKey, onUse }) {
   const [error, setError] = useState("");
   const reported = useRef({});
   const title = resource.label || "Audio";
-  const src = String(resource.url || "").trim();
+  const rawUrl = String(resource.url || "").trim();
+  const src = directAudioUrl(rawUrl);
+  const openUrl = drivePreviewUrl(rawUrl);
   const report = (eventType) => {
     const key = `${resource.id}-${eventType}`;
     if (reported.current[key]) return;
@@ -4133,7 +4170,7 @@ function RoleAudioPlayer({ resource, roleKey, onUse }) {
       />
       <span className="route-progress-bar"><i style={{ width: `${progress}%` }} /></span>
       <div className="role-audio-actions">
-        <a className="btn btn--ghost btn--sm" href={src} target="_blank" rel="noreferrer" onClick={() => report("open")}>
+        <a className="btn btn--ghost btn--sm" href={openUrl || src} target="_blank" rel="noreferrer" onClick={() => report("open")}>
           Abrir audio
         </a>
       </div>
@@ -4174,6 +4211,15 @@ function RoleplayHub({ data, setData, sessionUser }) {
     } catch (e) {
       console.warn("roleplay event:", e);
     }
+  };
+  const hasResourceEvent = (roleKey, resourceId, eventTypes = []) => {
+    const types = eventTypes.length ? eventTypes : ["open"];
+    return (data.roleplayEvents || []).some((e) =>
+      e.userId === sessionUser?.id &&
+      e.roleType === roleKey &&
+      e.resourceId === resourceId &&
+      types.includes(e.eventType)
+    );
   };
   const createSession = async () => {
     setBusy(true);
@@ -4275,20 +4321,24 @@ function RoleplayHub({ data, setData, sessionUser }) {
     if (!resources.length) return <div className="empty empty--compact">Todavía no hay recursos asignados para este rol.</div>;
     return (
       <div className="role-resource-cards">
-        {resources.map((r) => (
-          <div key={r.id} className={`card role-user-resource role-user-resource--${r.type}`}>
+        {resources.map((r) => {
+          const reviewed = r.type === "materials" && hasResourceEvent(roleKey, r.id, ["review"]);
+          const opened = r.type !== "materials" && hasResourceEvent(roleKey, r.id, ["open", "play", "complete"]);
+          return (
+          <div key={r.id} className={`card role-user-resource role-user-resource--${r.type} ${reviewed || opened ? "role-user-resource--done" : ""}`}>
             <div>
               <div className="role-resource-type">{r.type === "audio" ? "Audio" : r.type === "file" ? "PDF" : r.type === "html" ? "Juego HTML" : r.type === "materials" ? "Materiales" : "Wordwall"}</div>
               <div className="role-resource-title">{r.label || "Recurso"}</div>
               {r.time && <div className="role-resource-time">{r.time}</div>}
               {r.materials && <div className="dim" style={{ fontSize: 13 }}>{r.materials}</div>}
               {r.note && <div className="dim" style={{ fontSize: 13 }}>{r.note}</div>}
+              {(reviewed || opened) && <div className="role-resource-status">Registrado</div>}
             </div>
             {r.type === "audio" ? (
               <RoleAudioPlayer resource={r} roleKey={roleKey} onUse={recordUse} />
             ) : r.type === "materials" ? (
-              <button className="btn btn--teal-o btn--sm" onClick={() => recordUse(roleKey, r.id, "review")}>
-                Revisado
+              <button className={reviewed ? "btn btn--ghost btn--sm" : "btn btn--teal-o btn--sm"} onClick={() => recordUse(roleKey, r.id, "review")} disabled={reviewed}>
+                {reviewed ? "Revisado" : "Marcar como revisado"}
               </button>
             ) : (
               <a className="btn btn--gold btn--sm" href={r.url} target="_blank" rel="noreferrer" onClick={() => recordUse(roleKey, r.id, "open")}>
@@ -4296,7 +4346,8 @@ function RoleplayHub({ data, setData, sessionUser }) {
               </a>
             )}
           </div>
-        ))}
+          );
+        })}
       </div>
     );
   };
@@ -5765,11 +5816,13 @@ button:focus-visible,.inp:focus-visible{outline:2px solid var(--turf);outline-of
 .inp--time{width:150px;flex:none}
 .role-resource-cards{display:grid;gap:10px}
 .role-user-resource{display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap}
+.role-user-resource--done{border-color:#16DB9366;background:#16DB930d}
 .role-user-resource--audio{align-items:stretch}
 .role-user-resource audio{min-width:260px;max-width:100%}
 .role-resource-type{font-family:var(--mono);font-size:11px;text-transform:uppercase;letter-spacing:1.4px;color:var(--turf);font-weight:900}
 .role-resource-time{font-family:var(--mono);font-size:12px;color:var(--gold);font-weight:900;margin-top:2px}
 .role-resource-title{font-size:17px;font-weight:900}
+.role-resource-status{display:inline-flex;margin-top:7px;font-size:11px;font-weight:900;color:var(--turf);text-transform:uppercase;letter-spacing:1px}
 .role-audio{flex:1;min-width:320px;display:grid;gap:9px;background:var(--bg0);border:1px solid var(--line);border-radius:12px;padding:12px}
 .role-audio--playing{border-color:#16DB9366;background:#16DB930f}
 .role-audio--error{border-color:#FF2E6366;background:#FF2E6310}
