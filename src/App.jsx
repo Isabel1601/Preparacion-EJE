@@ -70,6 +70,8 @@ async function sbUpload(file) {
 const norm = (s) => String(s || "").trim().toLowerCase().replace(/\s+/g, " ");
 const phraseKey = (s) => norm(s).normalize("NFD").replace(/[\u0300-\u036f]/g, "");
 const ACCESS_PHRASE_KEY = "firmes en la fe sobre la roca";
+const normEmail = (s) => String(s || "").trim().toLowerCase();
+const isValidEmail = (s) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normEmail(s));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
 const pct = (c, t) => (t ? Math.round((c / t) * 100) : 0);
 const hasMeaningfulAnswer = (s) => phraseKey(s).replace(/[^a-z0-9]/g, "").length >= 2;
@@ -172,6 +174,7 @@ function mapUsers(userRows = []) {
   return (userRows || []).map((u) => ({
     id: u.id,
     name: u.name,
+    email: u.email || "",
     passHash: u.pass_hash,
     birthdate: u.birthdate || "",
     retreatDate: u.retreat_date || "",
@@ -545,7 +548,7 @@ async function saveData(next, prev) {
         method: "POST",
         headers: { Prefer: "resolution=merge-duplicates,return=minimal" },
         body: JSON.stringify({
-          id: u.id, name: u.name, pass_hash: u.passHash,
+          id: u.id, name: u.name, email: u.email || null, pass_hash: u.passHash,
           birthdate: u.birthdate || null, retreat_date: u.retreatDate || null,
           expectations: u.expectations || null, linked_canon: u.linkedCanon || null,
         }),
@@ -560,6 +563,184 @@ async function saveData(next, prev) {
 
   await Promise.all(jobs);
   return next;
+}
+
+function latestIso(...values) {
+  return values.filter(Boolean).sort().at(-1) || "";
+}
+function earliestIso(...values) {
+  return values.filter(Boolean).sort()[0] || "";
+}
+function mergeUserProfile(target, source) {
+  return {
+    ...target,
+    email: target.email || source.email || "",
+    birthdate: target.birthdate || source.birthdate || "",
+    retreatDate: target.retreatDate || source.retreatDate || "",
+    expectations: target.expectations || source.expectations || "",
+    linkedCanon: target.linkedCanon || source.linkedCanon || "",
+  };
+}
+function mergeProgressRows(a, b, userId, blockId) {
+  const x = a || {};
+  const y = b || {};
+  return {
+    ...x,
+    ...y,
+    id: `${userId}_${blockId}`,
+    userId,
+    blockId,
+    completed: !!(x.completed || y.completed),
+    completedAt: latestIso(x.completedAt, y.completedAt),
+    openedAt: latestIso(x.openedAt, y.openedAt),
+    audioPercent: Math.max(toInt(x.audioPercent, 0), toInt(y.audioPercent, 0)),
+    audioCompleted: !!(x.audioCompleted || y.audioCompleted),
+    audioCompletedAt: latestIso(x.audioCompletedAt, y.audioCompletedAt),
+    createdAt: earliestIso(x.createdAt, y.createdAt),
+    updatedAt: latestIso(x.updatedAt, y.updatedAt) || new Date().toISOString(),
+  };
+}
+function mergeAttendanceRows(a, b, userId, blockId) {
+  const x = a || {};
+  const y = b || {};
+  return {
+    ...x,
+    ...y,
+    id: `${userId}_${blockId}`,
+    userId,
+    blockId,
+    attended: !!(x.attended || y.attended),
+    createdAt: earliestIso(x.createdAt, y.createdAt),
+    updatedAt: latestIso(x.updatedAt, y.updatedAt) || new Date().toISOString(),
+  };
+}
+function mergeProgressForAccounts(rows = [], sourceId, targetId) {
+  const byKey = new Map();
+  for (const row of rows) {
+    const userId = row.userId === sourceId ? targetId : row.userId;
+    const key = `${userId}|${row.blockId}`;
+    const nextRow = { ...row, userId, id: `${userId}_${row.blockId}` };
+    byKey.set(key, mergeProgressRows(byKey.get(key), nextRow, userId, row.blockId));
+  }
+  return [...byKey.values()];
+}
+function mergeAttendanceForAccounts(rows = [], sourceId, targetId) {
+  const byKey = new Map();
+  for (const row of rows) {
+    const userId = row.userId === sourceId ? targetId : row.userId;
+    const key = `${userId}|${row.blockId}`;
+    const nextRow = { ...row, userId, id: `${userId}_${row.blockId}` };
+    byKey.set(key, mergeAttendanceRows(byKey.get(key), nextRow, userId, row.blockId));
+  }
+  return [...byKey.values()];
+}
+function mergeSessionParticipants(participants = [], source, target) {
+  const byUser = new Map();
+  for (const p of participants || []) {
+    const isSource = p.userId === source.id || (!p.userId && norm(p.userName) === norm(source.name));
+    const next = isSource ? { ...p, userId: target.id, userName: target.name } : { ...p };
+    const key = next.userId || norm(next.userName);
+    const prev = byUser.get(key);
+    if (!prev) {
+      byUser.set(key, next);
+    } else {
+      byUser.set(key, {
+        ...prev,
+        assignedRoleId: prev.assignedRoleId || next.assignedRoleId,
+        assignedRole: prev.assignedRole || next.assignedRole,
+        guide: prev.guide || next.guide,
+        isFacilitator: !!(prev.isFacilitator || next.isFacilitator),
+        joinedAt: earliestIso(prev.joinedAt, next.joinedAt) || prev.joinedAt || next.joinedAt,
+      });
+    }
+  }
+  return [...byUser.values()];
+}
+function buildMergedAccountData(data, sourceId, targetId) {
+  const users = data.users || [];
+  const source = users.find((u) => u.id === sourceId);
+  const target = users.find((u) => u.id === targetId);
+  if (!source || !target || source.id === target.id) return null;
+  const mergedTarget = mergeUserProfile(target, source);
+  const mergedSessions = (data.roleplaySessions || []).map((s) => {
+    const ownerIsSource = s.ownerUserId === source.id || (!s.ownerUserId && norm(s.ownerName) === norm(source.name));
+    return {
+      ...s,
+      ownerUserId: ownerIsSource ? target.id : s.ownerUserId,
+      ownerName: ownerIsSource ? target.name : s.ownerName,
+      participants: mergeSessionParticipants(s.participants || [], source, target),
+    };
+  });
+  return {
+    ...data,
+    users: users.filter((u) => u.id !== source.id).map((u) => (u.id === target.id ? mergedTarget : u)),
+    progress: mergeProgressForAccounts(data.progress || [], source.id, target.id),
+    attendance: mergeAttendanceForAccounts(data.attendance || [], source.id, target.id),
+    questions: (data.questions || []).map((q) => (q.userId === source.id ? { ...q, userId: target.id, userName: target.name } : q)),
+    roleplayEvents: (data.roleplayEvents || []).map((e) => (e.userId === source.id ? { ...e, userId: target.id, userName: target.name } : e)),
+    roleplaySessions: mergedSessions,
+  };
+}
+async function upsertProgressRow(row) {
+  const db = {
+    id: `${row.userId}_${row.blockId}`,
+    user_id: row.userId,
+    block_id: row.blockId,
+    completed: !!row.completed,
+    completed_at: row.completedAt || null,
+    opened_at: row.openedAt || null,
+    audio_percent: Math.max(0, Math.min(100, toInt(row.audioPercent, 0))),
+    audio_completed: !!row.audioCompleted,
+    audio_completed_at: row.audioCompletedAt || null,
+    updated_at: new Date().toISOString(),
+  };
+  return sbFetch("route_progress?on_conflict=user_id,block_id", {
+    method: "POST",
+    headers: { Prefer: "resolution=merge-duplicates,return=minimal" },
+    body: JSON.stringify(db),
+  });
+}
+async function upsertAttendanceRow(row) {
+  const db = {
+    id: `${row.userId}_${row.blockId}`,
+    user_id: row.userId,
+    block_id: row.blockId,
+    attended: !!row.attended,
+    updated_at: new Date().toISOString(),
+  };
+  return sbFetch("session_attendance?on_conflict=user_id,block_id", {
+    method: "POST",
+    headers: { Prefer: "resolution=merge-duplicates,return=minimal" },
+    body: JSON.stringify(db),
+  });
+}
+async function persistMergedAccountData(data, source, target, next) {
+  const targetProgress = (next.progress || []).filter((p) => p.userId === target.id);
+  const targetAttendance = (next.attendance || []).filter((a) => a.userId === target.id);
+  const changedSessions = (next.roleplaySessions || []).filter((s) => {
+    const before = (data.roleplaySessions || []).find((x) => x.id === s.id);
+    return before && JSON.stringify(before) !== JSON.stringify(s);
+  });
+  await Promise.all([
+    ...targetProgress.map(upsertProgressRow),
+    ...targetAttendance.map(upsertAttendanceRow),
+    ...changedSessions.map(saveRoleplaySession),
+    sbFetch(`question_box?user_id=eq.${encodeURIComponent(source.id)}`, {
+      method: "PATCH",
+      headers: { Prefer: "return=minimal" },
+      body: JSON.stringify({ user_id: target.id, user_name: target.name, updated_at: new Date().toISOString() }),
+    }),
+    sbFetch(`roleplay_events?user_id=eq.${encodeURIComponent(source.id)}`, {
+      method: "PATCH",
+      headers: { Prefer: "return=minimal" },
+      body: JSON.stringify({ user_id: target.id, user_name: target.name }),
+    }),
+  ]);
+  await Promise.all([
+    sbFetch(`route_progress?user_id=eq.${encodeURIComponent(source.id)}`, { method: "DELETE", headers: { Prefer: "return=minimal" } }),
+    sbFetch(`session_attendance?user_id=eq.${encodeURIComponent(source.id)}`, { method: "DELETE", headers: { Prefer: "return=minimal" } }),
+  ]);
+  await saveData({ ...data, users: next.users }, data);
 }
 const emptyData = () => ({
   pin: null,
@@ -629,7 +810,7 @@ function normalizeRoleplay(raw) {
 }
 
 /* ====== Usuarios (perfil de participante) ======
-   { id, name, passHash, birthdate, retreatDate, expectations, linkedCanon }
+   { id, name, email, passHash, birthdate, retreatDate, expectations, linkedCanon }
    Nota: passHash NO es seguridad real, solo ofusca la clave. El almacenamiento
    del artifact no es privado; esto se comunica al usuario en la interfaz. */
 function lightHash(str) {
@@ -1290,7 +1471,7 @@ function unlockedRouteBlocks(data, user) {
   });
 }
 function profileComplete(user) {
-  return !!(user?.name && user?.birthdate && hasMeaningfulAnswer(user?.retreatDate) && user?.expectations);
+  return !!(user?.name && isValidEmail(user?.email) && user?.birthdate && hasMeaningfulAnswer(user?.retreatDate) && user?.expectations);
 }
 function dashboardRows(data) {
   const users = data.users || [];
@@ -1838,6 +2019,13 @@ function UsersAdmin({ data, persist, busy }) {
   const users = data.users || [];
   const [confirmDel, setConfirmDel] = useState(null);
   const [expanded, setExpanded] = useState(null);
+  const [resetOpen, setResetOpen] = useState(null);
+  const [resetPass, setResetPass] = useState("");
+  const [resetMsg, setResetMsg] = useState(null);
+  const [mergeTargetBySource, setMergeTargetBySource] = useState({});
+  const [mergeConfirm, setMergeConfirm] = useState(null);
+  const [mergeBusy, setMergeBusy] = useState(false);
+  const [userMsg, setUserMsg] = useState(null);
 
   const canonicals = useMemo(() => {
     const set = new Set(Object.values(data.aliases));
@@ -1850,13 +2038,58 @@ function UsersAdmin({ data, persist, busy }) {
     try { await persist(next); } catch {}
   };
   const delUser = async (userId) => {
-    try { await persist({ ...data, users: users.filter((u) => u.id !== userId) }); setConfirmDel(null); } catch {}
+    setUserMsg(null);
+    try {
+      await persist({ ...data, users: users.filter((u) => u.id !== userId) });
+      setConfirmDel(null);
+      setUserMsg({ ok: true, t: "Perfil eliminado. Ese nombre y correo ya pueden volver a registrarse." });
+    } catch {
+      setUserMsg({ ok: false, t: "No se pudo eliminar el perfil. Ejecuta el SQL de la versión 16 en Supabase y vuelve a intentar." });
+    }
+  };
+  const resetPassword = async (userId) => {
+    setResetMsg(null);
+    if (resetPass.length < 4) { setResetMsg({ ok: false, userId, t: "La nueva clave debe tener al menos 4 caracteres." }); return; }
+    const next = { ...data, users: users.map((u) => (u.id === userId ? { ...u, passHash: lightHash(resetPass) } : u)) };
+    try {
+      await persist(next);
+      setResetMsg({ ok: true, userId, t: "Clave actualizada. Comparte la clave temporal con el participante." });
+      setResetPass("");
+      setResetOpen(null);
+    } catch {
+      setResetMsg({ ok: false, userId, t: "No se pudo actualizar la clave." });
+    }
   };
 
   // sugerencia automática: si el nombre del usuario coincide con un canónico
   const autoMatch = (u) => {
     if (u.linkedCanon) return null;
     return canonicals.find((c) => norm(c) === norm(u.name)) || null;
+  };
+  const doMerge = async (sourceId) => {
+    const targetId = mergeTargetBySource[sourceId] || "";
+    const source = users.find((u) => u.id === sourceId);
+    const target = users.find((u) => u.id === targetId);
+    const next = buildMergedAccountData(data, sourceId, targetId);
+    if (!source || !target || !next) {
+      setUserMsg({ ok: false, t: "Elige una cuenta principal válida para unificar." });
+      return;
+    }
+    setMergeBusy(true);
+    setUserMsg(null);
+    try {
+      await persistMergedAccountData(data, source, target, next);
+      await persist(next);
+      setMergeConfirm(null);
+      setMergeTargetBySource((prev) => ({ ...prev, [sourceId]: "" }));
+      setExpanded(target.id);
+      setUserMsg({ ok: true, t: `Cuenta unificada. "${source.name}" se movió a "${target.name}" y la duplicada fue eliminada.` });
+    } catch (e) {
+      console.error("merge accounts:", e);
+      setUserMsg({ ok: false, t: "No se pudo unificar. Ejecuta el SQL de la versión 16 en Supabase y vuelve a intentar." });
+    } finally {
+      setMergeBusy(false);
+    }
   };
 
   return (
@@ -1865,10 +2098,13 @@ function UsersAdmin({ data, persist, busy }) {
         Perfiles que los participantes crearon. Puedes <b>vincular</b> cada uno con su nombre en los resultados
         del podio para que vea sus puntos. Si el nombre coincide, se sugiere automáticamente.
       </div>
+      {userMsg && <div className={userMsg.ok ? "ok-inline" : "auth-err"}>{userMsg.t}</div>}
       {users.length === 0 && <div className="empty">Aún no hay usuarios registrados.</div>}
       {users.map((u) => {
         const suggestion = autoMatch(u);
         const isOpen = expanded === u.id;
+        const mergeTargetId = mergeTargetBySource[u.id] || "";
+        const mergeTarget = users.find((x) => x.id === mergeTargetId);
         return (
           <div key={u.id} className="card user-card">
             <div className="user-card-head">
@@ -1891,6 +2127,7 @@ function UsersAdmin({ data, persist, busy }) {
             {isOpen && (
               <div className="user-card-body">
                 <div className="user-fields">
+                  <div className="ufield"><span className="uf-l">Correo</span><span className="uf-v">{u.email || "Pendiente"}</span></div>
                   <div className="ufield"><span className="uf-l">🎂 Nacimiento</span><span className="uf-v">{fmtDate(u.birthdate)}{ageFromBirth(u.birthdate) != null ? ` · ${ageFromBirth(u.birthdate)} años` : ""}</span></div>
                   <div className="ufield"><span className="uf-l">⛪ Vivió su EJE</span><span className="uf-v">{u.retreatDate || "—"}</span></div>
                 </div>
@@ -1909,6 +2146,67 @@ function UsersAdmin({ data, persist, busy }) {
                       Vincular con “{suggestion}” (coincide)
                     </button>
                   )}
+                </div>
+
+                <div className="admin-merge-box">
+                  <div>
+                    <label className="lbl">Unificar cuenta duplicada</label>
+                    <div className="auth-hint">Usa esto si esta cuenta fue creada por error. El avance, asistencia, preguntas y uso de roles pasarán a la cuenta principal.</div>
+                  </div>
+                  <div className="admin-merge-actions">
+                    <select
+                      className="inp inp--select"
+                      value={mergeTargetId}
+                      disabled={busy || mergeBusy}
+                      onChange={(e) => {
+                        setMergeTargetBySource((prev) => ({ ...prev, [u.id]: e.target.value }));
+                        setMergeConfirm(null);
+                      }}
+                    >
+                      <option value="">Elegir cuenta principal</option>
+                      {users.filter((x) => x.id !== u.id).map((x) => (
+                        <option key={x.id} value={x.id}>{x.name}{x.email ? ` · ${x.email}` : ""}</option>
+                      ))}
+                    </select>
+                    {mergeConfirm === u.id ? (
+                      <>
+                        <button className="btn btn--danger-o btn--sm" disabled={!mergeTarget || busy || mergeBusy} onClick={() => doMerge(u.id)}>
+                          Confirmar unificación
+                        </button>
+                        <button className="btn btn--ghost btn--sm" disabled={mergeBusy} onClick={() => setMergeConfirm(null)}>
+                          Cancelar
+                        </button>
+                      </>
+                    ) : (
+                      <button className="btn btn--teal-o btn--sm" disabled={!mergeTarget || busy || mergeBusy} onClick={() => setMergeConfirm(u.id)}>
+                        Unificar con cuenta principal
+                      </button>
+                    )}
+                  </div>
+                  {mergeConfirm === u.id && mergeTarget && (
+                    <div className="auth-hint auth-hint--warn">
+                      Se conservará <b>{mergeTarget.name}</b> como cuenta principal y se eliminará <b>{u.name}</b>.
+                    </div>
+                  )}
+                </div>
+
+                <div className="admin-reset-box">
+                  <div>
+                    <label className="lbl">Resetear clave</label>
+                    <div className="auth-hint">Crea una clave temporal y compártela con el participante.</div>
+                  </div>
+                  {resetOpen === u.id ? (
+                    <div className="admin-reset-actions">
+                      <input className="inp inp--sm" type="password" value={resetPass} onChange={(e) => setResetPass(e.target.value)} placeholder="Nueva clave temporal" />
+                      <button className="btn btn--teal-o btn--sm" disabled={busy} onClick={() => resetPassword(u.id)}>Guardar clave</button>
+                      <button className="btn btn--ghost btn--sm" onClick={() => { setResetOpen(null); setResetPass(""); }}>Cancelar</button>
+                    </div>
+                  ) : (
+                    <button className="btn btn--ghost btn--sm" onClick={() => { setResetOpen(u.id); setResetMsg(null); }}>
+                      Cambiar clave
+                    </button>
+                  )}
+                  {resetMsg?.userId === u.id && <div className={resetMsg.ok ? "ok-inline" : "auth-err"}>{resetMsg.t}</div>}
                 </div>
 
                 {confirmDel === u.id ? (
@@ -2261,7 +2559,7 @@ function RouteEditor({ data, persist, busy }) {
     if (!file) return;
     const fileName = String(file.name || "").toLowerCase();
     const looksAudio = /^audio\//.test(file.type || "") || /\.(mp3|m4a|wav|ogg|aac|opus)$/i.test(fileName);
-    if (!looksAudio) { setUpErr("Debe ser un archivo de audio."); return; }
+    if (!looksAudio) console.warn("El navegador no reconoció el tipo de audio; se subirá igual por extensión.", file.type, file.name);
     setUpErr(null);
     setUploadingAudio(bi);
     try {
@@ -2409,7 +2707,7 @@ function RouteEditor({ data, persist, busy }) {
           <div className="ppt-input-group">
             <label className="btn btn--teal-o btn--sm ppt-upload-btn">
               {uploadingAudio === bi ? "Subiendo audio..." : "Subir audio"}
-              <input type="file" accept="audio/*,.mp3,.m4a,.wav,.ogg,.aac,.opus" style={{ display: "none" }} disabled={uploadingAudio === bi} onChange={(e) => { if (e.target.files[0]) uploadAudio(bi, e.target.files[0]); e.target.value = ""; }} />
+              <input type="file" accept=".mp3,.m4a,.wav,.ogg,.aac,.opus,audio/mpeg,audio/mp4,audio/wav,audio/ogg,audio/aac,audio/*" style={{ display: "none" }} disabled={uploadingAudio === bi} onChange={(e) => { if (e.target.files[0]) uploadAudio(bi, e.target.files[0]); e.target.value = ""; }} />
             </label>
             <span className="dim" style={{ fontSize: 12 }}>Si hay asistencia registrada, este audio queda como repaso opcional.</span>
           </div>
@@ -2974,10 +3272,7 @@ function RoleplayAdmin({ data, persist, busy }) {
     const fileName = String(file.name || "").toLowerCase();
     const looksAudio = /^audio\//.test(file.type || "") || /\.(mp3|m4a|wav|ogg|aac|opus)$/i.test(fileName);
     const looksPdf = file.type === "application/pdf" || /\.pdf$/i.test(fileName);
-    if (resource.type === "audio" && !looksAudio) {
-      setMsg("El recurso de audio debe ser un archivo de audio.");
-      return;
-    }
+    if (resource.type === "audio" && !looksAudio) console.warn("El navegador no reconoció el tipo de audio; se subirá igual por extensión.", file.type, file.name);
     if (resource.type === "file" && !looksPdf) {
       setMsg("El archivo del coordinador debe ser PDF.");
       return;
@@ -3040,7 +3335,7 @@ function RoleplayAdmin({ data, persist, busy }) {
                 {uploading === `${roleKey}-${idx}` ? "Subiendo..." : r.type === "audio" ? "Subir audio" : "Subir PDF"}
                 <input
                   type="file"
-                  accept={r.type === "audio" ? "audio/*,.mp3,.m4a,.wav,.ogg,.aac,.opus" : "application/pdf,.pdf"}
+                  accept={r.type === "audio" ? ".mp3,.m4a,.wav,.ogg,.aac,.opus,audio/mpeg,audio/mp4,audio/wav,audio/ogg,audio/aac,audio/*" : "application/pdf,.pdf"}
                   style={{ display: "none" }}
                   disabled={uploading === `${roleKey}-${idx}`}
                   onChange={(e) => { if (e.target.files[0]) uploadResource(roleKey, idx, e.target.files[0]); e.target.value = ""; }}
@@ -4117,6 +4412,8 @@ function RoleAudioPlayer({ resource, roleKey, onUse }) {
   const rawUrl = String(resource.url || "").trim();
   const src = directAudioUrl(rawUrl);
   const openUrl = drivePreviewUrl(rawUrl);
+  const downloadExt = (rawUrl.match(/\.(mp3|m4a|wav|ogg|aac|opus)(?:[?#]|$)/i)?.[1] || "mp3").toLowerCase();
+  const downloadName = `${String(title || "audio").replace(/[^a-zA-Z0-9._-]+/g, "_") || "audio"}.${downloadExt}`;
   const report = (eventType) => {
     const key = `${resource.id}-${eventType}`;
     if (reported.current[key]) return;
@@ -4170,6 +4467,9 @@ function RoleAudioPlayer({ resource, roleKey, onUse }) {
       />
       <span className="route-progress-bar"><i style={{ width: `${progress}%` }} /></span>
       <div className="role-audio-actions">
+        <a className="btn btn--teal-o btn--sm" href={src} target="_blank" rel="noreferrer" download={downloadName} onClick={() => report("download")}>
+          Descargar audio
+        </a>
         <a className="btn btn--ghost btn--sm" href={openUrl || src} target="_blank" rel="noreferrer" onClick={() => report("open")}>
           Abrir audio
         </a>
@@ -4472,7 +4772,7 @@ function RoleplayHub({ data, setData, sessionUser }) {
 
 /* ================= Autenticación de participantes ================= */
 function AuthScreen({ data, setData, onLogin }) {
-  const [tab, setTab] = useState("login"); // login | register
+  const [tab, setTab] = useState("login"); // login | register | forgot
   const users = data.users || [];
 
   // login state
@@ -4482,6 +4782,7 @@ function AuthScreen({ data, setData, onLogin }) {
 
   // register state
   const [rName, setRName] = useState("");
+  const [rEmail, setREmail] = useState("");
   const [rPass, setRPass] = useState("");
   const [rPass2, setRPass2] = useState("");
   const [rBirth, setRBirth] = useState("");
@@ -4489,12 +4790,20 @@ function AuthScreen({ data, setData, onLogin }) {
   const [rExpect, setRExpect] = useState("");
   const [rPhrase, setRPhrase] = useState("");
   const [rErr, setRErr] = useState(null);
+  const [fEmail, setFEmail] = useState("");
+  const [fPhrase, setFPhrase] = useState("");
+  const [fPass, setFPass] = useState("");
+  const [fPass2, setFPass2] = useState("");
+  const [fErr, setFErr] = useState(null);
+  const [fOk, setFOk] = useState(null);
   const [busy, setBusy] = useState(false);
 
   const doLogin = () => {
     setLErr(null);
-    const u = users.find((x) => norm(x.name) === norm(lName));
-    if (!u) { setLErr("No encontramos ese nombre. ¿Ya te registraste?"); return; }
+    const loginValue = lName.trim();
+    const emailValue = normEmail(loginValue);
+    const u = users.find((x) => norm(x.name) === norm(loginValue) || (emailValue && normEmail(x.email) === emailValue));
+    if (!u) { setLErr("No encontramos ese perfil. Puedes entrar con tu nombre o correo registrado."); return; }
     if (u.passHash !== lightHash(lPass)) { setLErr("La clave no coincide."); return; }
     onLogin(u.id);
   };
@@ -4502,7 +4811,9 @@ function AuthScreen({ data, setData, onLogin }) {
   const doRegister = async () => {
     setRErr(null);
     if (rName.trim().length < 3) { setRErr("Escribe tu nombre y apellido."); return; }
+    if (!isValidEmail(rEmail)) { setRErr("Escribe un correo válido."); return; }
     if (users.some((x) => norm(x.name) === norm(rName))) { setRErr("Ya existe alguien con ese nombre. Si eres tú, inicia sesión."); return; }
+    if (users.some((x) => normEmail(x.email) === normEmail(rEmail))) { setRErr("Ya existe un perfil con ese correo. Si eres tú, inicia sesión o recupera tu clave."); return; }
     if (rPass.length < 4) { setRErr("La clave debe tener al menos 4 caracteres."); return; }
     if (rPass !== rPass2) { setRErr("Las claves no coinciden."); return; }
     if (!hasMeaningfulAnswer(rRetreat)) { setRErr("Escribe una fecha o referencia real de cuándo viviste tu retiro EJE."); return; }
@@ -4511,6 +4822,7 @@ function AuthScreen({ data, setData, onLogin }) {
     const u = {
       id: uid(),
       name: rName.trim(),
+      email: normEmail(rEmail),
       passHash: lightHash(rPass),
       birthdate: rBirth || "",
       retreatDate: rRetreat.trim(),
@@ -4528,6 +4840,36 @@ function AuthScreen({ data, setData, onLogin }) {
     }
   };
 
+  const doReset = async () => {
+    setFErr(null);
+    setFOk(null);
+    const email = normEmail(fEmail);
+    if (!isValidEmail(email)) { setFErr("Escribe el correo con el que creaste tu perfil."); return; }
+    const u = users.find((x) => normEmail(x.email) === email);
+    if (!u) { setFErr("No encontramos un perfil con ese correo. Pide apoyo al administrador."); return; }
+    if (phraseKey(fPhrase) !== ACCESS_PHRASE_KEY) { setFErr("La frase de acceso no coincide."); return; }
+    if (fPass.length < 4) { setFErr("La nueva clave debe tener al menos 4 caracteres."); return; }
+    if (fPass !== fPass2) { setFErr("Las claves no coinciden."); return; }
+    setBusy(true);
+    try {
+      const next = { ...data, users: users.map((x) => (x.id === u.id ? { ...x, passHash: lightHash(fPass) } : x)) };
+      await saveData(next, data);
+      setData(next);
+      setFOk("Clave actualizada. Ya puedes iniciar sesión con tu nueva clave.");
+      setLName(u.email || u.name);
+      setLPass("");
+      setFEmail("");
+      setFPhrase("");
+      setFPass("");
+      setFPass2("");
+      setTab("login");
+    } catch {
+      setFErr("No se pudo actualizar la clave. Inténtalo otra vez.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
   return (
     <div className="auth">
       <div className="auth-card">
@@ -4536,19 +4878,44 @@ function AuthScreen({ data, setData, onLogin }) {
           <button className={`auth-tab ${tab === "register" ? "auth-tab--on" : ""}`} onClick={() => setTab("register")}>Crear mi perfil</button>
         </div>
 
-        {tab === "login" ? (
+        {tab === "forgot" ? (
           <div className="auth-body">
-            <label className="lbl">Nombre y apellido</label>
+            <label className="lbl">Correo registrado</label>
+            <input className="inp" type="email" value={fEmail} onChange={(e) => setFEmail(e.target.value)} placeholder="tu.correo@email.com" />
+            <label className="lbl" style={{ marginTop: 10 }}>Frase de acceso</label>
+            <input className="inp" value={fPhrase} onChange={(e) => setFPhrase(e.target.value)} placeholder="Firmes en la fe sobre la roca" />
+            <div className="auth-grid" style={{ marginTop: 10 }}>
+              <div>
+                <label className="lbl">Nueva clave</label>
+                <input className="inp" type="password" value={fPass} onChange={(e) => setFPass(e.target.value)} placeholder="Mínimo 4 caracteres" />
+              </div>
+              <div>
+                <label className="lbl">Repite la nueva clave</label>
+                <input className="inp" type="password" value={fPass2} onChange={(e) => setFPass2(e.target.value)} placeholder="••••" onKeyDown={(e) => e.key === "Enter" && doReset()} />
+              </div>
+            </div>
+            {fErr && <div className="auth-err">{fErr}</div>}
+            {fOk && <div className="ok-inline">{fOk}</div>}
+            <button className="btn btn--gold" style={{ marginTop: 14, width: "100%", justifyContent: "center" }} onClick={doReset} disabled={busy}>Actualizar clave</button>
+            <button className="btn btn--ghost btn--sm auth-link-btn" onClick={() => setTab("login")}>Volver a iniciar sesión</button>
+          </div>
+        ) : tab === "login" ? (
+          <div className="auth-body">
+            <label className="lbl">Nombre, apellido o correo</label>
             <input className="inp" value={lName} onChange={(e) => setLName(e.target.value)} placeholder="Como te registraste" onKeyDown={(e) => e.key === "Enter" && doLogin()} />
             <label className="lbl" style={{ marginTop: 10 }}>Tu clave</label>
             <input className="inp" type="password" value={lPass} onChange={(e) => setLPass(e.target.value)} placeholder="••••" onKeyDown={(e) => e.key === "Enter" && doLogin()} />
             {lErr && <div className="auth-err">{lErr}</div>}
+            {fOk && <div className="ok-inline">{fOk}</div>}
             <button className="btn btn--gold" style={{ marginTop: 14, width: "100%", justifyContent: "center" }} onClick={doLogin}>Entrar ⚽</button>
+            <button className="btn btn--ghost btn--sm auth-link-btn" onClick={() => setTab("forgot")}>Olvidé mi clave</button>
           </div>
         ) : (
           <div className="auth-body">
             <label className="lbl">Nombre y apellido *</label>
             <input className="inp" value={rName} onChange={(e) => setRName(e.target.value)} placeholder="Ej. María Fernanda Rojas" />
+            <label className="lbl" style={{ marginTop: 10 }}>Correo *</label>
+            <input className="inp" type="email" value={rEmail} onChange={(e) => setREmail(e.target.value)} placeholder="tu.correo@email.com" />
 
             <div className="auth-grid">
               <div>
@@ -4636,6 +5003,7 @@ function ProfileCard({ user, data, onClose, onLogout }) {
           <span className="route-progress-bar"><i style={{ width: `${myRoute.percent}%` }} /></span>
         </div>
 
+        <div className="profile-field"><span className="pf-l">Correo</span><span className="pf-v">{user.email || "Pendiente"}</span></div>
         <div className="profile-field"><span className="pf-l">🎂 Nacimiento</span><span className="pf-v">{fmtDate(user.birthdate)}</span></div>
         <div className="profile-field"><span className="pf-l">⛪ Vivió su EJE</span><span className="pf-v">{user.retreatDate || "—"}</span></div>
         {user.expectations && (
@@ -4646,6 +5014,53 @@ function ProfileCard({ user, data, onClose, onLogout }) {
         )}
 
         <button className="btn btn--ghost btn--sm" style={{ marginTop: 16 }} onClick={onLogout}>Cerrar sesión</button>
+      </div>
+    </div>
+  );
+}
+
+function EmailUpdateModal({ user, data, setData, onLogout }) {
+  const [email, setEmail] = useState(user.email || "");
+  const [err, setErr] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const users = data.users || [];
+
+  const saveEmail = async () => {
+    setErr(null);
+    const clean = normEmail(email);
+    if (!isValidEmail(clean)) { setErr("Escribe un correo válido."); return; }
+    if (users.some((u) => u.id !== user.id && normEmail(u.email) === clean)) {
+      setErr("Ese correo ya está registrado en otro perfil.");
+      return;
+    }
+    setBusy(true);
+    try {
+      const next = { ...data, users: users.map((u) => (u.id === user.id ? { ...u, email: clean } : u)) };
+      await saveData(next, data);
+      setData(next);
+    } catch {
+      setErr("No se pudo guardar el correo. Inténtalo otra vez.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="overlay">
+      <div className="modal email-update-modal" onClick={(e) => e.stopPropagation()}>
+        <div className="modal-head">
+          <div>
+            <div className="modal-title">Actualiza tu correo</div>
+            <div className="dim" style={{ fontSize: 13 }}>Lo usaremos para recuperar tu clave y dar seguimiento a tu preparación.</div>
+          </div>
+        </div>
+        <label className="lbl">Correo</label>
+        <input className="inp" type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="tu.correo@email.com" onKeyDown={(e) => e.key === "Enter" && saveEmail()} />
+        {err && <div className="auth-err">{err}</div>}
+        <div className="email-update-actions">
+          <button className="btn btn--gold" onClick={saveEmail} disabled={busy}>Guardar correo</button>
+          <button className="btn btn--ghost btn--sm" onClick={onLogout} disabled={busy}>Cerrar sesión</button>
+        </div>
       </div>
     </div>
   );
@@ -4670,6 +5085,7 @@ export default function App() {
   const [progressBusy, setProgressBusy] = useState(false);
 
   const sessionUser = data?.users?.find((u) => u.id === sessionUserId) || null;
+  const needsEmailUpdate = !!(sessionUser && !isValidEmail(sessionUser.email));
 
   useEffect(() => {
     (async () => {
@@ -4974,6 +5390,14 @@ export default function App() {
           questions={data.questions || []}
           onSubmit={handleSubmitQuestion}
           onClose={() => setShowQuestionBox(false)}
+        />
+      )}
+      {needsEmailUpdate && (
+        <EmailUpdateModal
+          user={sessionUser}
+          data={data}
+          setData={setData}
+          onLogout={handleLogout}
         />
       )}
 
@@ -5503,6 +5927,11 @@ button:focus-visible,.inp:focus-visible{outline:2px solid var(--turf);outline-of
 .auth-privacy{font-size:12px;color:var(--dim);background:var(--bg0);border:1px solid var(--line);
   border-radius:10px;padding:11px 13px;margin-top:14px;line-height:1.5}
 .auth-hint{font-size:12px;color:var(--dim);margin-top:6px}
+.auth-hint--warn{background:#FFC53110;border:1px solid #FFC53135;border-radius:10px;padding:9px 11px;color:var(--gold2)}
+.auth-hint--warn b{color:var(--text)}
+.auth-link-btn{margin:10px auto 0;display:flex}
+.email-update-modal{max-width:460px}
+.email-update-actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:14px}
 
 /* ---------- Perfil del participante ---------- */
 .profile-stats{display:grid;grid-template-columns:repeat(4,1fr);gap:9px;margin-bottom:18px}
@@ -5532,6 +5961,11 @@ button:focus-visible,.inp:focus-visible{outline:2px solid var(--turf);outline-of
 .uf-v{font-weight:700;font-size:13.5px}
 .user-expect{margin-top:10px}
 .link-row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.admin-merge-box{margin-top:12px;background:#FFC5310d;border:1px solid #FFC53135;border-radius:11px;padding:12px;display:grid;gap:9px}
+.admin-merge-actions{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.admin-reset-box{margin-top:12px;background:var(--bg0);border:1px solid var(--line);border-radius:11px;padding:12px;display:grid;gap:9px}
+.admin-reset-actions{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.admin-reset-actions .inp{max-width:260px}
 
 /* ---------- Dashboard admin ---------- */
 .admin-dash{display:grid;gap:16px}
@@ -5830,7 +6264,7 @@ button:focus-visible,.inp:focus-visible{outline:2px solid var(--turf);outline-of
 .role-audio-title{font-size:14px;font-weight:900}
 .role-audio-help{font-size:12px;color:var(--dim);line-height:1.35}
 .role-audio audio{width:100%;min-width:0}
-.role-audio-actions{display:flex;justify-content:flex-end}
+.role-audio-actions{display:flex;justify-content:flex-end;gap:8px;flex-wrap:wrap}
 .role-journey-strip,.admin-helper-strip{display:flex;gap:8px;flex-wrap:wrap;background:var(--bg0);border:1px solid var(--line);border-radius:12px;padding:10px}
 .role-journey-strip span,.admin-helper-strip span{font-size:12px;color:var(--dim);background:#FFFFFF08;border:1px solid #FFFFFF10;border-radius:999px;padding:7px 10px}
 .role-journey-strip b{display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;border-radius:50%;background:var(--turf);color:#03251A;margin-right:5px}
