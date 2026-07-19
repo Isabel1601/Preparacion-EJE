@@ -44,12 +44,15 @@ async function sbFetch(path, opts = {}) {
   return text ? JSON.parse(text) : null;
 }
 
-// Sube un archivo (PDF/imagen) a Supabase Storage y devuelve su URL pública
+// Sube un archivo a Supabase Storage y devuelve su URL pública.
+// Los audios van al bucket "audios"; los PDFs/imágenes al bucket "presentaciones".
 async function sbUpload(file) {
   const safe = file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
   const path = `${Date.now()}_${safe}`;
   const contentType = file.type || mimeFromFileName(safe);
-  const res = await fetch(`${SUPABASE_URL}/storage/v1/object/presentaciones/${encodeURIComponent(path)}`, {
+  const esAudio = /^audio\//.test(contentType) || /\.(mp3|m4a|wav|ogg|aac|opus)$/i.test(safe);
+  const bucket = esAudio ? "audios" : "presentaciones";
+  const res = await fetch(`${SUPABASE_URL}/storage/v1/object/${bucket}/${encodeURIComponent(path)}`, {
     method: "POST",
     headers: {
       apikey: SUPABASE_KEY,
@@ -63,7 +66,7 @@ async function sbUpload(file) {
     const txt = await res.text().catch(() => "");
     throw new Error(`Storage ${res.status}: ${txt}`);
   }
-  return `${SUPABASE_URL}/storage/v1/object/public/presentaciones/${encodeURIComponent(path)}`;
+  return `${SUPABASE_URL}/storage/v1/object/public/${bucket}/${encodeURIComponent(path)}`;
 }
 
 /* ================= Utilidades ================= */
@@ -4771,6 +4774,31 @@ function RoleplayHub({ data, setData, sessionUser }) {
 }
 
 /* ================= Autenticación de participantes ================= */
+function PasswordInput({ value, onChange, placeholder, onEnter, className }) {
+  const [show, setShow] = useState(false);
+  return (
+    <div className="pass-wrap">
+      <input
+        className={`inp pass-inp ${className || ""}`}
+        type={show ? "text" : "password"}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder={placeholder}
+        onKeyDown={(e) => { if (e.key === "Enter" && onEnter) onEnter(); }}
+      />
+      <button
+        type="button"
+        className="pass-toggle"
+        onClick={() => setShow((s) => !s)}
+        title={show ? "Ocultar clave" : "Mostrar clave"}
+        aria-label={show ? "Ocultar clave" : "Mostrar clave"}
+      >
+        {show ? "🙈" : "👁️"}
+      </button>
+    </div>
+  );
+}
+
 function AuthScreen({ data, setData, onLogin }) {
   const [tab, setTab] = useState("login"); // login | register | forgot
   const users = data.users || [];
@@ -4791,6 +4819,7 @@ function AuthScreen({ data, setData, onLogin }) {
   const [rPhrase, setRPhrase] = useState("");
   const [rErr, setRErr] = useState(null);
   const [fEmail, setFEmail] = useState("");
+  const [fName, setFName] = useState("");
   const [fPhrase, setFPhrase] = useState("");
   const [fPass, setFPass] = useState("");
   const [fPass2, setFPass2] = useState("");
@@ -4844,9 +4873,12 @@ function AuthScreen({ data, setData, onLogin }) {
     setFErr(null);
     setFOk(null);
     const email = normEmail(fEmail);
+    const nameValue = fName.trim();
+    if (!nameValue) { setFErr("Escribe tu usuario original (el nombre con el que te registraste)."); return; }
     if (!isValidEmail(email)) { setFErr("Escribe el correo con el que creaste tu perfil."); return; }
     const u = users.find((x) => normEmail(x.email) === email);
     if (!u) { setFErr("No encontramos un perfil con ese correo. Pide apoyo al administrador."); return; }
+    if (norm(u.name) !== norm(nameValue)) { setFErr("El usuario no coincide con ese correo. Escribe el nombre exacto con el que te registraste."); return; }
     if (phraseKey(fPhrase) !== ACCESS_PHRASE_KEY) { setFErr("La frase de acceso no coincide."); return; }
     if (fPass.length < 4) { setFErr("La nueva clave debe tener al menos 4 caracteres."); return; }
     if (fPass !== fPass2) { setFErr("Las claves no coinciden."); return; }
@@ -4859,6 +4891,7 @@ function AuthScreen({ data, setData, onLogin }) {
       setLName(u.email || u.name);
       setLPass("");
       setFEmail("");
+      setFName("");
       setFPhrase("");
       setFPass("");
       setFPass2("");
@@ -4880,18 +4913,20 @@ function AuthScreen({ data, setData, onLogin }) {
 
         {tab === "forgot" ? (
           <div className="auth-body">
-            <label className="lbl">Correo registrado</label>
+            <label className="lbl">Usuario original (tu nombre registrado)</label>
+            <input className="inp" value={fName} onChange={(e) => setFName(e.target.value)} placeholder="Nombre y apellido con el que te registraste" />
+            <label className="lbl" style={{ marginTop: 10 }}>Correo registrado</label>
             <input className="inp" type="email" value={fEmail} onChange={(e) => setFEmail(e.target.value)} placeholder="tu.correo@email.com" />
             <label className="lbl" style={{ marginTop: 10 }}>Frase de acceso</label>
             <input className="inp" value={fPhrase} onChange={(e) => setFPhrase(e.target.value)} placeholder="Firmes en la fe sobre la roca" />
             <div className="auth-grid" style={{ marginTop: 10 }}>
               <div>
                 <label className="lbl">Nueva clave</label>
-                <input className="inp" type="password" value={fPass} onChange={(e) => setFPass(e.target.value)} placeholder="Mínimo 4 caracteres" />
+                <PasswordInput value={fPass} onChange={setFPass} placeholder="Mínimo 4 caracteres" />
               </div>
               <div>
                 <label className="lbl">Repite la nueva clave</label>
-                <input className="inp" type="password" value={fPass2} onChange={(e) => setFPass2(e.target.value)} placeholder="••••" onKeyDown={(e) => e.key === "Enter" && doReset()} />
+                <PasswordInput value={fPass2} onChange={setFPass2} placeholder="••••" onEnter={doReset} />
               </div>
             </div>
             {fErr && <div className="auth-err">{fErr}</div>}
@@ -4904,7 +4939,7 @@ function AuthScreen({ data, setData, onLogin }) {
             <label className="lbl">Nombre, apellido o correo</label>
             <input className="inp" value={lName} onChange={(e) => setLName(e.target.value)} placeholder="Como te registraste" onKeyDown={(e) => e.key === "Enter" && doLogin()} />
             <label className="lbl" style={{ marginTop: 10 }}>Tu clave</label>
-            <input className="inp" type="password" value={lPass} onChange={(e) => setLPass(e.target.value)} placeholder="••••" onKeyDown={(e) => e.key === "Enter" && doLogin()} />
+            <PasswordInput value={lPass} onChange={setLPass} placeholder="••••" onEnter={doLogin} />
             {lErr && <div className="auth-err">{lErr}</div>}
             {fOk && <div className="ok-inline">{fOk}</div>}
             <button className="btn btn--gold" style={{ marginTop: 14, width: "100%", justifyContent: "center" }} onClick={doLogin}>Entrar ⚽</button>
@@ -4939,11 +4974,11 @@ function AuthScreen({ data, setData, onLogin }) {
             <div className="auth-grid" style={{ marginTop: 10 }}>
               <div>
                 <label className="lbl">Crea una clave *</label>
-                <input className="inp" type="password" value={rPass} onChange={(e) => setRPass(e.target.value)} placeholder="Mínimo 4 caracteres" />
+                <PasswordInput value={rPass} onChange={setRPass} placeholder="Mínimo 4 caracteres" />
               </div>
               <div>
                 <label className="lbl">Repite la clave *</label>
-                <input className="inp" type="password" value={rPass2} onChange={(e) => setRPass2(e.target.value)} placeholder="••••" />
+                <PasswordInput value={rPass2} onChange={setRPass2} placeholder="••••" />
               </div>
             </div>
 
@@ -5930,6 +5965,11 @@ button:focus-visible,.inp:focus-visible{outline:2px solid var(--turf);outline-of
 .auth-hint--warn{background:#FFC53110;border:1px solid #FFC53135;border-radius:10px;padding:9px 11px;color:var(--gold2)}
 .auth-hint--warn b{color:var(--text)}
 .auth-link-btn{margin:10px auto 0;display:flex}
+.pass-wrap{position:relative;display:flex;align-items:center}
+.pass-inp{padding-right:44px;width:100%}
+.pass-toggle{position:absolute;right:6px;top:50%;transform:translateY(-50%);background:transparent;
+  border:none;cursor:pointer;font-size:17px;padding:6px;border-radius:8px;line-height:1;opacity:.85;transition:var(--tr)}
+.pass-toggle:hover{opacity:1;background:#ffffff10}
 .email-update-modal{max-width:460px}
 .email-update-actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:14px}
 
