@@ -9,7 +9,7 @@ const REDUCED =
   window.matchMedia &&
   window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
-/* ===== ConexiÃ³n a Supabase (base de datos) ===== */
+/* ===== Conexión a Supabase (base de datos) ===== */
 const SUPABASE_URL = "https://ereginsabjkoeopydnmi.supabase.co";
 const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVyZWdpbnNhYmprb2VvcHlkbm1pIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODMzMjAxODksImV4cCI6MjA5ODg5NjE4OX0._P88jMQp7DP3HyAUZEv1rw5K83M_wrPD69zxfAnobs4";
 const SB_HEADERS = {
@@ -17,7 +17,7 @@ const SB_HEADERS = {
   Authorization: `Bearer ${SUPABASE_KEY}`,
   "Content-Type": "application/json",
 };
-// Helper genÃ©rico para la API REST de Supabase (PostgREST)
+// Helper genérico para la API REST de Supabase (PostgREST)
 function mimeFromFileName(name) {
   const ext = String(name || "").toLowerCase().split(".").pop();
   return {
@@ -44,8 +44,8 @@ async function sbFetch(path, opts = {}) {
   return text ? JSON.parse(text) : null;
 }
 
-// Sube un archivo a Supabase Storage y devuelve su URL pÃºblica.
-// Los audios van al bucket "audios"; los PDFs/imÃ¡genes al bucket "presentaciones".
+// Sube un archivo a Supabase Storage y devuelve su URL pública.
+// Los audios van al bucket "audios"; los PDFs/imágenes al bucket "presentaciones".
 async function sbUpload(file) {
   const safe = file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
   const path = `${Date.now()}_${safe}`;
@@ -116,24 +116,24 @@ function writeStoreJson(key, value) {
   writeStore(key, JSON.stringify(value));
 }
 const ROLEPLAY_ROLES = [
-  { key: "asesor", label: "Asesor", hint: "Crea sesiones de prÃ¡ctica con cÃ³digo y asignaciÃ³n de casos." },
-  { key: "apoyo_interno", label: "Apoyo interno", hint: "Practica con juegos asignados por administraciÃ³n." },
-  { key: "apoyo_externo", label: "Apoyo externo", hint: "Practica con juegos asignados por administraciÃ³n." },
+  { key: "asesor", label: "Asesor", hint: "Crea sesiones de práctica con código y asignación de casos." },
+  { key: "apoyo_interno", label: "Apoyo interno", hint: "Practica con juegos asignados por administración." },
+  { key: "apoyo_externo", label: "Apoyo externo", hint: "Practica con juegos asignados por administración." },
   { key: "coordinador", label: "Coordinador", hint: "Consulta PDFs y audios necesarios para el retiro." },
 ];
 const DEFAULT_ASCOS_TYPES = [
-  { id: "pregunton", name: "El PreguntÃ³n Eterno", guide: "Solo quiere hacerse notar." },
+  { id: "pregunton", name: "El Preguntón Eterno", guide: "Solo quiere hacerse notar." },
   { id: "cabeza_dura", name: "El Cabeza Dura", guide: "No entiende razones y no quiere aprender de otros." },
-  { id: "timido", name: "El TÃ­mido", guide: "Tiene ideas, pero le cuesta decirlas." },
+  { id: "timido", name: "El Tímido", guide: "Tiene ideas, pero le cuesta decirlas." },
   { id: "mudo_voluntario", name: "El Mudo Voluntario", guide: "No participa por aburrimiento, inseguridad o actitud distante." },
-  { id: "charlatan", name: "El CharlatÃ¡n", guide: "Habla todo el tiempo y se sale del tema." },
-  { id: "distraido", name: "El DistraÃ­do", guide: "Salta de un tema a otro y desvÃ­a al grupo." },
+  { id: "charlatan", name: "El Charlatán", guide: "Habla todo el tiempo y se sale del tema." },
+  { id: "distraido", name: "El Distraído", guide: "Salta de un tema a otro y desvía al grupo." },
   { id: "detallista", name: "El Detallista", guide: "Se enreda en detalles y frena el avance." },
-  { id: "gran_tipo", name: "El Gran Tipo", guide: "Siempre quiere ayudar y estÃ¡ dispuesto a escuchar." },
+  { id: "gran_tipo", name: "El Gran Tipo", guide: "Siempre quiere ayudar y está dispuesto a escuchar." },
   { id: "profundo", name: "El Calahondo o Profundo", guide: "Habla poco, pero va directo a lo central." },
   { id: "buen_humor", name: "El de Buen Humor", guide: "Ayuda a aliviar tensiones con optimismo." },
   { id: "concreto", name: "El Tipo Concreto", guide: "Aterriza el tema con hechos y experiencias." },
-  { id: "positivo", name: "El Hombre Positivo", guide: "Encuentra el lado bueno y defiende a los mÃ¡s dÃ©biles." },
+  { id: "positivo", name: "El Hombre Positivo", guide: "Encuentra el lado bueno y defiende a los más débiles." },
 ];
 const DEFAULT_APOYO_EXTERNO_RESOURCES = [
   {
@@ -141,24 +141,24 @@ const DEFAULT_APOYO_EXTERNO_RESOURCES = [
     type: "html",
     label: "Quiz - Apoyo Externo",
     url: "/apoyo_externo_quiz.html",
-    note: "Juego HTML cargado como prÃ¡ctica editable desde administraciÃ³n.",
+    note: "Juego HTML cargado como práctica editable desde administración.",
   },
 ];
 const DEFAULT_APOYO_INTERNO_RESOURCES = [
-  { id: "mat_recepcion", type: "materials", time: "SÃ¡bado 8:00", label: "RecepciÃ³n", materials: "Mesitas, sillas, alfileres, solapines, listas, hojas de bienvenida, afiche Bienvenidos a EJE y mÃºsica de recepciÃ³n." },
-  { id: "mat_ingreso", type: "materials", time: "SÃ¡bado 8:55", label: "Ingreso al salÃ³n", materials: "Afiches de bienvenida, escudo de EJE y mÃºsica de entrada." },
-  { id: "mat_presentacion", type: "materials", time: "SÃ¡bado 9:00", label: "PresentaciÃ³n", materials: "Cartulinas para solapines, lapiceros, plumones, hojas de resma, alfileres, clips, lanas y crayolas." },
-  { id: "mat_reglas", type: "materials", time: "SÃ¡bado 10:05", label: "Reglas y normas", materials: "Sobres para recoger relojes y maletÃ­n con llave." },
-  { id: "mat_amigo_secreto", type: "materials", time: "SÃ¡bado 10:20", label: "Amigo secreto", materials: "Dos canastas, papelitos, lapiceros y mÃºsica indicada para la dinÃ¡mica." },
-  { id: "mat_juegos", type: "materials", time: "SÃ¡bado 3:05", label: "CuÃ¡les son mis juegos", materials: "Volante de Juegos y lectura o grabaciÃ³n del volante." },
-  { id: "mat_mimo", type: "materials", time: "SÃ¡bado 4:55", label: "Mimo: La Caja", materials: "Hojita de difÃ­cil compartir y mÃºsica indicada." },
-  { id: "mat_agape", type: "materials", time: "SÃ¡bado 7:00", label: "Ãgape", materials: "Adornos, cadenetas, velas en cada mesa, aparatos de audio, Biblia Lc 24, 13-34 y mÃºsica indicada." },
-  { id: "mat_alegria", type: "materials", time: "SÃ¡bado 7:45", label: "Hora de la alegrÃ­a", materials: "Sociodramas, cantos de animaciÃ³n, diapositivas o pelÃ­cula indicada." },
-  { id: "mat_confianza", type: "materials", time: "SÃ¡bado 8:45", label: "Confianza", materials: "Itinerario, obstÃ¡culos, lugar preparado para la celebraciÃ³n y mÃºsica indicada." },
-  { id: "mat_perdon", type: "materials", time: "SÃ¡bado 9:15", label: "CelebraciÃ³n del perdÃ³n", materials: "Cirio grande, velas, cruz, alfileres, papel de seda, lapiceros, tablitas, fÃ³sforos, cancioneros, hojitas de celebraciÃ³n y mÃºsica indicada." },
-  { id: "mat_oracion", type: "materials", time: "Domingo 9:40", label: "Poder de la oraciÃ³n y carta de amor", materials: "Pescaditos y cartas para entregar a asesores de grupo al final del poder de la oraciÃ³n." },
-  { id: "mat_mundo", type: "materials", time: "Domingo 12:00", label: "Podemos cambiar el mundo", materials: "MÃºsica SueÃ±o Imposible, Vamos con alegrÃ­a, Id y EnseÃ±ad, y materiales definidos por coordinaciÃ³n." },
-  { id: "mat_clausura", type: "materials", time: "Domingo 1:30", label: "EucaristÃ­a de clausura", materials: "Altar preparado, lecturas coordinadas con el director espiritual y materiales litÃºrgicos necesarios." },
+  { id: "mat_recepcion", type: "materials", time: "Sábado 8:00", label: "Recepción", materials: "Mesitas, sillas, alfileres, solapines, listas, hojas de bienvenida, afiche Bienvenidos a EJE y música de recepción." },
+  { id: "mat_ingreso", type: "materials", time: "Sábado 8:55", label: "Ingreso al salón", materials: "Afiches de bienvenida, escudo de EJE y música de entrada." },
+  { id: "mat_presentacion", type: "materials", time: "Sábado 9:00", label: "Presentación", materials: "Cartulinas para solapines, lapiceros, plumones, hojas de resma, alfileres, clips, lanas y crayolas." },
+  { id: "mat_reglas", type: "materials", time: "Sábado 10:05", label: "Reglas y normas", materials: "Sobres para recoger relojes y maletín con llave." },
+  { id: "mat_amigo_secreto", type: "materials", time: "Sábado 10:20", label: "Amigo secreto", materials: "Dos canastas, papelitos, lapiceros y música indicada para la dinámica." },
+  { id: "mat_juegos", type: "materials", time: "Sábado 3:05", label: "Cuáles son mis juegos", materials: "Volante de Juegos y lectura o grabación del volante." },
+  { id: "mat_mimo", type: "materials", time: "Sábado 4:55", label: "Mimo: La Caja", materials: "Hojita de difícil compartir y música indicada." },
+  { id: "mat_agape", type: "materials", time: "Sábado 7:00", label: "Ágape", materials: "Adornos, cadenetas, velas en cada mesa, aparatos de audio, Biblia Lc 24, 13-34 y música indicada." },
+  { id: "mat_alegria", type: "materials", time: "Sábado 7:45", label: "Hora de la alegría", materials: "Sociodramas, cantos de animación, diapositivas o película indicada." },
+  { id: "mat_confianza", type: "materials", time: "Sábado 8:45", label: "Confianza", materials: "Itinerario, obstáculos, lugar preparado para la celebración y música indicada." },
+  { id: "mat_perdon", type: "materials", time: "Sábado 9:15", label: "Celebración del perdón", materials: "Cirio grande, velas, cruz, alfileres, papel de seda, lapiceros, tablitas, fósforos, cancioneros, hojitas de celebración y música indicada." },
+  { id: "mat_oracion", type: "materials", time: "Domingo 9:40", label: "Poder de la oración y carta de amor", materials: "Pescaditos y cartas para entregar a asesores de grupo al final del poder de la oración." },
+  { id: "mat_mundo", type: "materials", time: "Domingo 12:00", label: "Podemos cambiar el mundo", materials: "Música Sueño Imposible, Vamos con alegría, Id y Enseñad, y materiales definidos por coordinación." },
+  { id: "mat_clausura", type: "materials", time: "Domingo 1:30", label: "Eucaristía de clausura", materials: "Altar preparado, lecturas coordinadas con el director espiritual y materiales litúrgicos necesarios." },
 ];
 const toInt = (v, d = 0) => {
   const n = parseInt(v, 10);
@@ -492,7 +492,7 @@ async function loadAuthData() {
   }
 }
 
-/* ===== Guardado inteligente: detecta quÃ© cambiÃ³ y actualiza solo esa tabla ===== */
+/* ===== Guardado inteligente: detecta qué cambió y actualiza solo esa tabla ===== */
 async function saveData(next, prev) {
   const jobs = [];
   const p = prev || {};
@@ -759,10 +759,10 @@ const emptyData = () => ({
   roleplaySessions: [],
   roleplayEvents: [],
 });
-const emptyRoute = () => ({ title: "Ruta de PreparaciÃ³n", blocks: [] });
+const emptyRoute = () => ({ title: "Ruta de Preparación", blocks: [] });
 /* Un bloque de la ruta formativa:
    { id, title, subtitle, pptUrl, resources: [ { id, type: 'game'|'video', label, url, slide } ] }
-   slide = nÃºmero de lÃ¡mina donde aparece el recurso (opcional, informativo) */
+   slide = número de lámina donde aparece el recurso (opcional, informativo) */
 const emptyBlock = () => ({ id: uid(), title: "", subtitle: "", pptUrl: "", resources: [], locked: false });
 
 const emptyRoleResources = () => ({ resources: [] });
@@ -817,7 +817,7 @@ function normalizeRoleplay(raw) {
    Nota: passHash NO es seguridad real, solo ofusca la clave. El almacenamiento
    del artifact no es privado; esto se comunica al usuario en la interfaz. */
 function lightHash(str) {
-  // hash simple determinÃ­stico (djb2) â€” evita guardar la clave en texto plano
+  // hash simple determinístico (djb2) — evita guardar la clave en texto plano
   let h = 5381;
   const s = String(str);
   for (let i = 0; i < s.length; i++) h = ((h << 5) + h + s.charCodeAt(i)) & 0xffffffff;
@@ -834,13 +834,13 @@ function ageFromBirth(iso) {
   return a >= 0 && a < 120 ? a : null;
 }
 function fmtDate(iso) {
-  if (!iso) return "â€”";
+  if (!iso) return "—";
   const d = new Date(iso);
   if (isNaN(d)) return iso;
   return d.toLocaleDateString("es-PE", { day: "2-digit", month: "long", year: "numeric" });
 }
 
-/* ====== NormalizaciÃ³n de URLs para embeber ====== */
+/* ====== Normalización de URLs para embeber ====== */
 function toEmbedUrl(url) {
   const u = String(url || "").trim();
   if (!u) return "";
@@ -935,7 +935,7 @@ const Sound = (() => {
     o.stop(start + dur + 0.05);
   };
 
-  // rÃ¡faga de ruido (para aplausos / redoble)
+  // ráfaga de ruido (para aplausos / redoble)
   const noise = (start, dur, { gain = 0.2, freq = 2000, q = 0.7, type = "bandpass", curve = 1.5 } = {}) => {
     const c = ctx;
     const buffer = c.createBuffer(1, Math.max(1, Math.floor(c.sampleRate * dur)), c.sampleRate);
@@ -982,10 +982,10 @@ const Sound = (() => {
     src.start(start);
   };
 
-  // ovaciÃ³n: muchos claps solapados que suben y bajan de intensidad
+  // ovación: muchos claps solapados que suben y bajan de intensidad
   const applause = (start, dur = 2.6) => {
     const c = ctx;
-    // colchÃ³n de "multitud" (ruido rosa suave de fondo)
+    // colchón de "multitud" (ruido rosa suave de fondo)
     const bedLen = Math.floor(c.sampleRate * dur);
     const bed = c.createBuffer(1, bedLen, c.sampleRate);
     const bd = bed.getChannelData(0);
@@ -1016,7 +1016,7 @@ const Sound = (() => {
     }
   };
 
-  // Redoble de tambor con tensiÃ³n creciente (tipo Kahoot)
+  // Redoble de tambor con tensión creciente (tipo Kahoot)
   const suspense = () => {
     if (muted) return;
     const c = ensure();
@@ -1033,7 +1033,7 @@ const Sound = (() => {
     tone(880, time, 0.18, "sine", 0.12, 1320);
   };
 
-  // CelebraciÃ³n del campeÃ³n: fanfarria de trompeta + campanas + OVACIÃ“N con aplausos
+  // Celebración del campeón: fanfarria de trompeta + campanas + OVACIÓN con aplausos
   const celebrate = () => {
     if (muted) return;
     const c = ensure();
@@ -1051,11 +1051,11 @@ const Sound = (() => {
     [523.25, 659.25, 783.99, 1046.5].forEach((f) => tone(f, chordAt, 1.0, "triangle", 0.13));
     tone(1568, chordAt, 1.2, "sine", 0.1);
     tone(2093, chordAt + 0.1, 1.0, "sine", 0.06);
-    // OVACIÃ“N: aplausos sostenidos que arrancan junto con la fanfarria
+    // OVACIÓN: aplausos sostenidos que arrancan junto con la fanfarria
     applause(t + 0.15, 3.0);
   };
 
-  // Clic corto de reveal (2Âº y 3Âº puesto): "swoosh" ascendente
+  // Clic corto de reveal (2º y 3º puesto): "swoosh" ascendente
   const pop = () => {
     if (muted) return;
     const c = ensure();
@@ -1063,11 +1063,11 @@ const Sound = (() => {
     const t = c.currentTime;
     tone(392, t, 0.18, "triangle", 0.16, 784);
     noise(t, 0.14, { gain: 0.06, freq: 3000, q: 0.5, curve: 2 });
-    // pequeÃ±o aplauso breve
+    // pequeño aplauso breve
     applause(t + 0.05, 0.7);
   };
 
-  // Sonido corto y positivo al "Mostrar todo" (acorde rÃ¡pido)
+  // Sonido corto y positivo al "Mostrar todo" (acorde rápido)
   const chord = () => {
     if (muted) return;
     const c = ensure();
@@ -1091,7 +1091,7 @@ function parseWorkbook(buf) {
     blankrows: true,
   });
   const cell = (r, c) => String((rows[r] || [])[c] ?? "").trim();
-  const title = cell(0, 0) || "Ejercicio sin tÃ­tulo";
+  const title = cell(0, 0) || "Ejercicio sin título";
   const students = [];
   const questions = [];
   let i = 2;
@@ -1119,13 +1119,13 @@ function parseWorkbook(buf) {
       const q = cell(j, 0);
       const mark = cell(j, 2);
       if (!q && !mark) break;
-      if (q && (mark === "âœ”" || mark === "âœ–")) {
+      if (q && (mark === "✔" || mark === "✖")) {
         let qi = questions.findIndex((x) => norm(x) === norm(q));
         if (qi === -1) {
           questions.push(q);
           qi = questions.length - 1;
         }
-        answers[qi] = mark === "âœ”" ? 1 : 0;
+        answers[qi] = mark === "✔" ? 1 : 0;
       }
       j++;
     }
@@ -1198,18 +1198,13 @@ function parseDetalle(text) {
   return out;
 }
 
-/* ============ FusiÃ³n de participantes (re-subida) ============
+/* ============ Fusión de participantes (re-subida) ============
    Combina la lista existente con la nueva: actualiza a quien ya estaba
    (conservando el mejor intento) y agrega a los nuevos.                    */
 async function importWordwallResultsFromUrl(url) {
   const cleanUrl = String(url || "").trim();
   if (!/^https?:\/\//i.test(cleanUrl)) throw new Error("Pega un link valido de Wordwall.");
-  let res;
-  try {
-    res = await fetch(cleanUrl, { credentials: "omit" });
-  } catch {
-    throw new Error("Wordwall bloqueo la lectura directa de ese link. Abre el link de resultados y usa Excel o pega el detallado.");
-  }
+  const res = await fetch(cleanUrl);
   if (!res.ok) throw new Error("No se pudo leer el link de resultados.");
   const contentType = (res.headers.get("content-type") || "").toLowerCase();
   const buf = await res.arrayBuffer();
@@ -1239,7 +1234,7 @@ async function importWordwallResultsFromUrl(url) {
     const parsed = parseWorkbook(buf);
     if (parsed.students.length) return parsed;
   } catch {}
-  throw new Error("Ese link abre la vista de resultados, pero no entrega datos importables a la app. Exporta el Excel o pega el detallado de Wordwall.");
+  throw new Error("Wordwall no permitio leer ese link desde la app. Exporta el Excel o pega el detallado.");
 }
 
 function mergeStudents(existing, incoming) {
@@ -1279,30 +1274,10 @@ function mergeStudents(existing, incoming) {
   return { students: [...map.values()], added, updated };
 }
 function mergeQuestions(existing, incoming) {
-  // preserva las preguntas ya conocidas; si el nuevo trae mÃ¡s, las suma
+  // preserva las preguntas ya conocidas; si el nuevo trae más, las suma
   if (!incoming || !incoming.length) return existing || [];
   if (!existing || !existing.length) return incoming;
   return incoming.length >= existing.length ? incoming : existing;
-}
-
-async function syncExerciseFromResultsUrl(exercise) {
-  const resultsUrl = String(exercise?.resultsUrl || "").trim();
-  if (!resultsUrl) throw new Error("No tiene link de resultados.");
-  const imported = await importWordwallResultsFromUrl(resultsUrl);
-  const incoming = (imported.students || []).map((s) => ({ ...s }));
-  if (!incoming.length) throw new Error("No se encontraron participantes en ese link.");
-  const merged = mergeStudents(exercise.students || [], incoming);
-  return {
-    exercise: {
-      ...exercise,
-      students: merged.students,
-      questions: mergeQuestions(exercise.questions, imported.questions),
-      date: new Date().toISOString(),
-      resultsUrl,
-    },
-    added: merged.added,
-    updated: merged.updated,
-  };
 }
 
 /* ============ Ranking y puntos de campeonato ============ */
@@ -1336,13 +1311,13 @@ function earliestAttemptSnapshot(a, b) {
   return attemptSnapshot(isEarlierAttempt(b, a) ? b : a);
 }
 /* Decide si el intento 'b' es mejor que 'a' para conservar al fusionar/deduplicar.
-   Prioriza: mÃ¡s aciertos > desempate Wordwall > intento mÃ¡s reciente. */
+   Prioriza: más aciertos > desempate Wordwall > intento más reciente. */
 function isBetterAttempt(b, a) {
   if (!a) return true;
   if ((b.correct ?? 0) !== (a.correct ?? 0)) return (b.correct ?? 0) > (a.correct ?? 0);
   const sb = b.score ?? -1, sa = a.score ?? -1;
   if (sb !== sa) return sb > sa;
-  // desempate final: el mÃ¡s reciente (mayor 'submitted' o mayor 'order')
+  // desempate final: el más reciente (mayor 'submitted' o mayor 'order')
   const tb = attemptTime(b), ta = attemptTime(a);
   if (tb !== ta) return tb > ta;
   return (b.order ?? 0) >= (a.order ?? 0);
@@ -1379,7 +1354,7 @@ function rankExercise(ex, aliases, excluded) {
     if (!prev || isEarlierAttempt(rankedAttempt, prev)) byCanon.set(canon, rankedAttempt);
   }
   const arr = [...byCanon.values()];
-  // Regla de orden: SIEMPRE gana quien tiene mÃ¡s aciertos.
+  // Regla de orden: SIEMPRE gana quien tiene más aciertos.
   // Wordwall solo se usa como desempate oculto entre quienes tienen los mismos aciertos.
   arr.sort((a, b) => {
     if (b.correct !== a.correct) return b.correct - a.correct;
@@ -1512,7 +1487,7 @@ function dashboardRows(data) {
     const complete = profileComplete(u);
     const issues = [];
     if (!complete) issues.push("Perfil incompleto");
-    if (!u.linkedCanon) issues.push("Sin vÃ­nculo al podio");
+    if (!u.linkedCanon) issues.push("Sin vínculo al podio");
     if (routeStats.total > 0 && routeStats.completed === 0) issues.push("Sin avance en ruta");
     else if (routeStats.total > 0 && routeStats.percent < 50) issues.push("Avance bajo");
     if (u.linkedCanon && (!stats || stats.played === 0)) issues.push("Sin resultados");
@@ -1522,7 +1497,7 @@ function dashboardRows(data) {
       route: routeStats,
       stats,
       issues,
-      status: issues.length ? issues.join(" Â· ") : "Al dÃ­a",
+      status: issues.length ? issues.join(" · ") : "Al día",
     };
   });
 }
@@ -1560,11 +1535,11 @@ function displayOf(s, consolidated) {
     if (s.totalGames != null) parts.push(`${s.played}/${s.totalGames} juegos`);
     if (s.missingGames > 0) parts.push(`faltan ${s.missingGames}`);
     parts.push(`${s.correct}/${s.total} aciertos`);
-    return { main: formatChampionshipPoints(s.points), unit: "pts campeonato", sub: parts.join(" Â· ") };
+    return { main: formatChampionshipPoints(s.points), unit: "pts campeonato", sub: parts.join(" · ") };
   }
   const parts = [];
   parts.push(`${s.correct}/${s.total} aciertos`);
-  return { main: formatChampionshipPoints(s.points), unit: "pts campeonato", sub: parts.join(" Â· ") };
+  return { main: formatChampionshipPoints(s.points), unit: "pts campeonato", sub: parts.join(" · ") };
 }
 
 function roleLabel(key) {
@@ -1668,9 +1643,9 @@ function Confetti({ burst }) {
 
 /* ================= Podio ================= */
 const PODIUM_META = {
-  1: { cls: "pc-gold", h: 218, medal: "ðŸ¥‡", tag: "CAMPEÃ“N" },
-  2: { cls: "pc-silver", h: 158, medal: "ðŸ¥ˆ", tag: "SUBCAMPEÃ“N" },
-  3: { cls: "pc-bronze", h: 116, medal: "ðŸ¥‰", tag: "3ER PUESTO" },
+  1: { cls: "pc-gold", h: 218, medal: "🥇", tag: "CAMPEÓN" },
+  2: { cls: "pc-silver", h: 158, medal: "🥈", tag: "SUBCAMPEÓN" },
+  3: { cls: "pc-bronze", h: 116, medal: "🥉", tag: "3ER PUESTO" },
 };
 function PodiumColumn({ student, rank, shown, consolidated }) {
   const meta = PODIUM_META[rank];
@@ -1680,7 +1655,7 @@ function PodiumColumn({ student, rank, shown, consolidated }) {
       <div className={`podium-head ${shown ? "is-shown" : ""}`}>
         {shown ? (
           <div className={`player-card ${meta.cls}`}>
-            {rank === 1 && <span className="pc-crown">ðŸ‘‘</span>}
+            {rank === 1 && <span className="pc-crown">👑</span>}
             <span className="pc-tag">{meta.tag}</span>
             <div className="pc-avatar-wrap">
               <div className={`avatar ${meta.cls}`}>{initials(student.canon)}</div>
@@ -1759,9 +1734,9 @@ function PodiumStage({ ranked, subtitle, consolidated, muted, setMuted }) {
   }, [advance]);
 
   if (!ranked.length)
-    return <div className="empty">AÃºn no hay resultados para mostrar aquÃ­.</div>;
+    return <div className="empty">Aún no hay resultados para mostrar aquí.</div>;
 
-  const labels = ["Revelar el podio", "Revelar 2Âº lugar", "Revelar 1Âº lugar", "Mostrar menciones honorÃ­ficas"];
+  const labels = ["Revelar el podio", "Revelar 2º lugar", "Revelar 1º lugar", "Mostrar menciones honoríficas"];
 
   return (
     <div style={{ position: "relative" }}>
@@ -1769,7 +1744,7 @@ function PodiumStage({ ranked, subtitle, consolidated, muted, setMuted }) {
       <div className="stage-topbar">
         <div className="stage-subtitle">{subtitle}</div>
         <button className="mute-btn" onClick={toggleMute} title={muted ? "Activar sonido" : "Silenciar"} aria-label={muted ? "Activar sonido" : "Silenciar"}>
-          {muted ? "ðŸ”‡" : "ðŸ”Š"}
+          {muted ? "🔇" : "🔊"}
         </button>
       </div>
 
@@ -1814,18 +1789,18 @@ function PodiumStage({ ranked, subtitle, consolidated, muted, setMuted }) {
           <button className="btn btn--ghost" onClick={() => { const wasChampHidden = step < 3; setStep(maxStep); if (wasChampHidden) Sound.celebrate(); else Sound.chord(); }}>Mostrar todo</button>
         )}
         {step >= maxStep && (
-          <button className="btn btn--ghost" onClick={() => { setStep(0); Sound.chord(); }}>â†º Repetir revelaciÃ³n</button>
+          <button className="btn btn--ghost" onClick={() => { setStep(0); Sound.chord(); }}>↺ Repetir revelación</button>
         )}
       </div>
       <div className="hint">
-        Avanza con <kbd>Espacio</kbd> o <kbd>â†’</kbd>
+        Avanza con <kbd>Espacio</kbd> o <kbd>→</kbd>
       </div>
 
       {step >= maxStep && mentions.length > 0 && (
         <div className="mentions">
           <div className="mentions-title">
             <span className="rule" />
-            MENCIONES HONORÃFICAS
+            MENCIONES HONORÍFICAS
             <span className="rule" />
           </div>
           <div className="mentions-row">
@@ -1833,13 +1808,13 @@ function PodiumStage({ ranked, subtitle, consolidated, muted, setMuted }) {
               const d = displayOf(s, consolidated);
               return (
                 <div key={s.canon} className="mention-card">
-                  <div className="mention-rank">{s.rank}Âº</div>
+                  <div className="mention-rank">{s.rank}º</div>
                   <div className="avatar avatar--sm">{initials(s.canon)}</div>
                   <div>
                     <div className="mention-name">{s.canon}</div>
                     <div className="mention-score">
                       <b>{d.main} {d.unit}</b>
-                      {d.sub && <span className="dim"> Â· {d.sub}</span>}
+                      {d.sub && <span className="dim"> · {d.sub}</span>}
                     </div>
                   </div>
                 </div>
@@ -1852,14 +1827,14 @@ function PodiumStage({ ranked, subtitle, consolidated, muted, setMuted }) {
   );
 }
 
-/* ================= ExplicaciÃ³n de puntos ================= */
+/* ================= Explicación de puntos ================= */
 function ScoringInfo({ compact }) {
   const [open, setOpen] = useState(false);
   return (
     <div className={`scoring ${compact ? "scoring--compact" : ""}`}>
       <button className="scoring-toggle" onClick={() => setOpen(!open)}>
-        <span>âš½ Â¿CÃ³mo se ordena el podio?</span>
-        <span className={`chev ${open ? "chev--up" : ""}`}>â–¾</span>
+        <span>⚽ ¿Cómo se ordena el podio?</span>
+        <span className={`chev ${open ? "chev--up" : ""}`}>▾</span>
       </button>
       {open && (
         <div className="scoring-body">
@@ -1869,10 +1844,10 @@ function ScoringInfo({ compact }) {
           </p>
           <div className="scoring-grid">
             {[
-              ["âœ”", "1 acierto", "1 punto"],
-              ["ðŸŽ®", "Juego pendiente", "0 puntos"],
-              ["ðŸ“Š", "% aciertos", "sobre todo"],
-              ["ðŸ†", "Consolidado", "total"],
+              ["✔", "1 acierto", "1 punto"],
+              ["🎮", "Juego pendiente", "0 puntos"],
+              ["📊", "% aciertos", "sobre todo"],
+              ["🏆", "Consolidado", "total"],
             ].map(([ic, l, p]) => (
               <div key={l} className="scoring-item">
                 <span className="scoring-ic">{ic}</span>
@@ -1883,7 +1858,7 @@ function ScoringInfo({ compact }) {
           </div>
           <p className="dim" style={{ fontSize: 12.5, marginTop: 4 }}>
             El porcentaje se calcula sobre el total de preguntas de todos los juegos obligatorios,
-            no solo sobre los juegos que la persona ya jugÃ³.
+            no solo sobre los juegos que la persona ya jugó.
           </p>
           <p className="dim" style={{ fontSize: 12.5, marginTop: 8 }}>
             Si dos personas tienen los mismos aciertos, Wordwall puede desempatar el orden interno,
@@ -1895,9 +1870,9 @@ function ScoringInfo({ compact }) {
   );
 }
 
-/* ================= Tablas y estadÃ­sticas ================= */
+/* ================= Tablas y estadísticas ================= */
 function RankBadge({ rank }) {
-  if (rank <= 3) return <span className={`rank-badge rb-${rank}`}>{["ðŸ¥‡", "ðŸ¥ˆ", "ðŸ¥‰"][rank - 1]}</span>;
+  if (rank <= 3) return <span className={`rank-badge rb-${rank}`}>{["🥇", "🥈", "🥉"][rank - 1]}</span>;
   return <span className="rank-badge rb-n">{rank}</span>;
 }
 function FullTable({ rows, consolidated, withScores, onStudent }) {
@@ -1970,7 +1945,7 @@ function StatsQuestions({ ex }) {
     [ex]
   );
   if (!stats.length)
-    return <div className="empty">Este ejercicio no tiene detalle por pregunta (se cargÃ³ solo desde el detallado pegado, sin el Excel).</div>;
+    return <div className="empty">Este ejercicio no tiene detalle por pregunta (se cargó solo desde el detallado pegado, sin el Excel).</div>;
   return (
     <div className="qgrid">
       {stats.map((s, i) => {
@@ -1980,10 +1955,10 @@ function StatsQuestions({ ex }) {
           <div key={i} className={`card qcard ${hard ? "qcard--hard" : ""}`}>
             <div className="qrow">
               <div className="qtext">{s.q}</div>
-              <div className={`qscore ${hard ? "t-red" : "t-teal"}`}>{s.ok}/{s.total} Â· {p}%</div>
+              <div className={`qscore ${hard ? "t-red" : "t-teal"}`}>{s.ok}/{s.total} · {p}%</div>
             </div>
             <div className="qbar"><i className={hard ? "bg-red" : "bg-teal"} style={{ width: `${p}%` }} /></div>
-            {hard && <div className="qflag">âš  Reforzar en la prÃ³xima sesiÃ³n</div>}
+            {hard && <div className="qflag">⚠ Reforzar en la próxima sesión</div>}
           </div>
         );
       })}
@@ -2010,12 +1985,12 @@ function StudentModal({ canon, data, onClose }) {
             <span className="avatar">{initials(canon)}</span>
             <div className="disp modal-title">{canon}</div>
           </div>
-          <button className="btn btn--ghost btn--sm" onClick={onClose}>Cerrar âœ•</button>
+          <button className="btn btn--ghost btn--sm" onClick={onClose}>Cerrar ✕</button>
         </div>
         {detail.cons && (
           <div className="consline">
-            <span className="t-gold">{formatChampionshipPoints(detail.cons.points)} pts de campeonato</span> Â· puesto {detail.cons.rank} Â· {detail.cons.correct}/{detail.cons.total} aciertos
-            {detail.cons.missingGames ? <span className="dim"> Â· faltan {detail.cons.missingGames} juego{detail.cons.missingGames === 1 ? "" : "s"}</span> : ""}
+            <span className="t-gold">{formatChampionshipPoints(detail.cons.points)} pts de campeonato</span> · puesto {detail.cons.rank} · {detail.cons.correct}/{detail.cons.total} aciertos
+            {detail.cons.missingGames ? <span className="dim"> · faltan {detail.cons.missingGames} juego{detail.cons.missingGames === 1 ? "" : "s"}</span> : ""}
           </div>
         )}
         {detail.perEx.map(({ ex, st }) => (
@@ -2023,14 +1998,14 @@ function StudentModal({ canon, data, onClose }) {
             <div className="modal-ex-head">
               {ex.title}
               <span className="dim">
-                {" "}â€” {st.correct}/{st.total} Â· puesto {st.rank} Â· {formatChampionshipPoints(st.points)} pts campeonato
+                {" "}— {st.correct}/{st.total} · puesto {st.rank} · {formatChampionshipPoints(st.points)} pts campeonato
               </span>
             </div>
             <div className="modal-qs">
               {(ex.questions || []).map((q, qi) =>
                 !st.answers || st.answers[qi] == null ? null : (
                   <div key={qi} className={st.answers[qi] ? "q-ok" : "q-bad"}>
-                    {st.answers[qi] ? "âœ”" : "âœ–"} {q}
+                    {st.answers[qi] ? "✔" : "✖"} {q}
                   </div>
                 )
               )}
@@ -2043,7 +2018,7 @@ function StudentModal({ canon, data, onClose }) {
 }
 
 /* ================= Editor de ejercicio ================= */
-/* ================= Admin: gestiÃ³n de usuarios ================= */
+/* ================= Admin: gestión de usuarios ================= */
 function UsersAdmin({ data, persist, busy }) {
   const users = data.users || [];
   const [confirmDel, setConfirmDel] = useState(null);
@@ -2073,7 +2048,7 @@ function UsersAdmin({ data, persist, busy }) {
       setConfirmDel(null);
       setUserMsg({ ok: true, t: "Perfil eliminado. Ese nombre y correo ya pueden volver a registrarse." });
     } catch {
-      setUserMsg({ ok: false, t: "No se pudo eliminar el perfil. Ejecuta el SQL de la versiÃ³n 16 en Supabase y vuelve a intentar." });
+      setUserMsg({ ok: false, t: "No se pudo eliminar el perfil. Ejecuta el SQL de la versión 16 en Supabase y vuelve a intentar." });
     }
   };
   const resetPassword = async (userId) => {
@@ -2090,7 +2065,7 @@ function UsersAdmin({ data, persist, busy }) {
     }
   };
 
-  // sugerencia automÃ¡tica: si el nombre del usuario coincide con un canÃ³nico
+  // sugerencia automática: si el nombre del usuario coincide con un canónico
   const autoMatch = (u) => {
     if (u.linkedCanon) return null;
     return canonicals.find((c) => norm(c) === norm(u.name)) || null;
@@ -2101,7 +2076,7 @@ function UsersAdmin({ data, persist, busy }) {
     const target = users.find((u) => u.id === targetId);
     const next = buildMergedAccountData(data, sourceId, targetId);
     if (!source || !target || !next) {
-      setUserMsg({ ok: false, t: "Elige una cuenta principal vÃ¡lida para unificar." });
+      setUserMsg({ ok: false, t: "Elige una cuenta principal válida para unificar." });
       return;
     }
     setMergeBusy(true);
@@ -2112,10 +2087,10 @@ function UsersAdmin({ data, persist, busy }) {
       setMergeConfirm(null);
       setMergeTargetBySource((prev) => ({ ...prev, [sourceId]: "" }));
       setExpanded(target.id);
-      setUserMsg({ ok: true, t: `Cuenta unificada. "${source.name}" se moviÃ³ a "${target.name}" y la duplicada fue eliminada.` });
+      setUserMsg({ ok: true, t: `Cuenta unificada. "${source.name}" se movió a "${target.name}" y la duplicada fue eliminada.` });
     } catch (e) {
       console.error("merge accounts:", e);
-      setUserMsg({ ok: false, t: "No se pudo unificar. Ejecuta el SQL de la versiÃ³n 16 en Supabase y vuelve a intentar." });
+      setUserMsg({ ok: false, t: "No se pudo unificar. Ejecuta el SQL de la versión 16 en Supabase y vuelve a intentar." });
     } finally {
       setMergeBusy(false);
     }
@@ -2125,10 +2100,10 @@ function UsersAdmin({ data, persist, busy }) {
     <div className="stack" style={{ gap: 10 }}>
       <div className="dim" style={{ fontSize: 13 }}>
         Perfiles que los participantes crearon. Puedes <b>vincular</b> cada uno con su nombre en los resultados
-        del podio para que vea sus puntos. Si el nombre coincide, se sugiere automÃ¡ticamente.
+        del podio para que vea sus puntos. Si el nombre coincide, se sugiere automáticamente.
       </div>
       {userMsg && <div className={userMsg.ok ? "ok-inline" : "auth-err"}>{userMsg.t}</div>}
-      {users.length === 0 && <div className="empty">AÃºn no hay usuarios registrados.</div>}
+      {users.length === 0 && <div className="empty">Aún no hay usuarios registrados.</div>}
       {users.map((u) => {
         const suggestion = autoMatch(u);
         const isOpen = expanded === u.id;
@@ -2143,7 +2118,7 @@ function UsersAdmin({ data, persist, busy }) {
                   <div className="user-card-name">{u.name}</div>
                   <div className="dim" style={{ fontSize: 12 }}>
                     {u.linkedCanon
-                      ? <>ðŸ”— Vinculado a <b>{u.linkedCanon}</b></>
+                      ? <>🔗 Vinculado a <b>{u.linkedCanon}</b></>
                       : <span style={{ color: "var(--gold)" }}>Sin vincular al podio</span>}
                   </div>
                 </div>
@@ -2157,22 +2132,22 @@ function UsersAdmin({ data, persist, busy }) {
               <div className="user-card-body">
                 <div className="user-fields">
                   <div className="ufield"><span className="uf-l">Correo</span><span className="uf-v">{u.email || "Pendiente"}</span></div>
-                  <div className="ufield"><span className="uf-l">ðŸŽ‚ Nacimiento</span><span className="uf-v">{fmtDate(u.birthdate)}{ageFromBirth(u.birthdate) != null ? ` Â· ${ageFromBirth(u.birthdate)} aÃ±os` : ""}</span></div>
-                  <div className="ufield"><span className="uf-l">â›ª ViviÃ³ su EJE</span><span className="uf-v">{u.retreatDate || "â€”"}</span></div>
+                  <div className="ufield"><span className="uf-l">🎂 Nacimiento</span><span className="uf-v">{fmtDate(u.birthdate)}{ageFromBirth(u.birthdate) != null ? ` · ${ageFromBirth(u.birthdate)} años` : ""}</span></div>
+                  <div className="ufield"><span className="uf-l">⛪ Vivió su EJE</span><span className="uf-v">{u.retreatDate || "—"}</span></div>
                 </div>
                 {u.expectations && (
-                  <div className="user-expect"><span className="uf-l">ðŸ’­ Expectativas</span><div className="pf-quote">"{u.expectations}"</div></div>
+                  <div className="user-expect"><span className="uf-l">💭 Expectativas</span><div className="pf-quote">"{u.expectations}"</div></div>
                 )}
 
                 <label className="lbl" style={{ marginTop: 12 }}>Vincular con nombre del podio</label>
                 <div className="link-row">
                   <select className="inp inp--select" value={u.linkedCanon || ""} onChange={(e) => setLink(u.id, e.target.value)} disabled={busy}>
-                    <option value="">â€” Sin vincular â€”</option>
+                    <option value="">— Sin vincular —</option>
                     {canonicals.map((c) => <option key={c} value={c}>{c}</option>)}
                   </select>
                   {suggestion && (
                     <button className="btn btn--teal-o btn--sm" onClick={() => setLink(u.id, suggestion)}>
-                      Vincular con â€œ{suggestion}â€ (coincide)
+                      Vincular con “{suggestion}” (coincide)
                     </button>
                   )}
                 </div>
@@ -2180,7 +2155,7 @@ function UsersAdmin({ data, persist, busy }) {
                 <div className="admin-merge-box">
                   <div>
                     <label className="lbl">Unificar cuenta duplicada</label>
-                    <div className="auth-hint">Usa esto si esta cuenta fue creada por error. El avance, asistencia, preguntas y uso de roles pasarÃ¡n a la cuenta principal.</div>
+                    <div className="auth-hint">Usa esto si esta cuenta fue creada por error. El avance, asistencia, preguntas y uso de roles pasarán a la cuenta principal.</div>
                   </div>
                   <div className="admin-merge-actions">
                     <select
@@ -2194,13 +2169,13 @@ function UsersAdmin({ data, persist, busy }) {
                     >
                       <option value="">Elegir cuenta principal</option>
                       {users.filter((x) => x.id !== u.id).map((x) => (
-                        <option key={x.id} value={x.id}>{x.name}{x.email ? ` Â· ${x.email}` : ""}</option>
+                        <option key={x.id} value={x.id}>{x.name}{x.email ? ` · ${x.email}` : ""}</option>
                       ))}
                     </select>
                     {mergeConfirm === u.id ? (
                       <>
                         <button className="btn btn--danger-o btn--sm" disabled={!mergeTarget || busy || mergeBusy} onClick={() => doMerge(u.id)}>
-                          Confirmar unificaciÃ³n
+                          Confirmar unificación
                         </button>
                         <button className="btn btn--ghost btn--sm" disabled={mergeBusy} onClick={() => setMergeConfirm(null)}>
                           Cancelar
@@ -2214,7 +2189,7 @@ function UsersAdmin({ data, persist, busy }) {
                   </div>
                   {mergeConfirm === u.id && mergeTarget && (
                     <div className="auth-hint auth-hint--warn">
-                      Se conservarÃ¡ <b>{mergeTarget.name}</b> como cuenta principal y se eliminarÃ¡ <b>{u.name}</b>.
+                      Se conservará <b>{mergeTarget.name}</b> como cuenta principal y se eliminará <b>{u.name}</b>.
                     </div>
                   )}
                 </div>
@@ -2222,7 +2197,7 @@ function UsersAdmin({ data, persist, busy }) {
                 <div className="admin-reset-box">
                   <div>
                     <label className="lbl">Resetear clave</label>
-                    <div className="auth-hint">Crea una clave temporal y compÃ¡rtela con el participante.</div>
+                    <div className="auth-hint">Crea una clave temporal y compártela con el participante.</div>
                   </div>
                   {resetOpen === u.id ? (
                     <div className="admin-reset-actions">
@@ -2240,9 +2215,9 @@ function UsersAdmin({ data, persist, busy }) {
 
                 {confirmDel === u.id ? (
                   <div className="del-confirm" style={{ marginTop: 12 }}>
-                    <span>Â¿Eliminar el perfil de {u.name}?</span>
+                    <span>¿Eliminar el perfil de {u.name}?</span>
                     <div className="del-confirm-actions">
-                      <button className="btn btn--danger-o btn--sm" onClick={() => delUser(u.id)}>SÃ­, eliminar</button>
+                      <button className="btn btn--danger-o btn--sm" onClick={() => delUser(u.id)}>Sí, eliminar</button>
                       <button className="btn btn--ghost btn--sm" onClick={() => setConfirmDel(null)}>Cancelar</button>
                     </div>
                   </div>
@@ -2302,11 +2277,11 @@ function AdminDashboard({ data }) {
   }, { correct: 0, total: 0 });
   const avgAccuracy = pct(resultTotals.correct, resultTotals.total);
   const setFilter = (key, value) => setFilters((prev) => ({ ...prev, [key]: value }));
-  const attendanceLabels = { all: "Todas", present: "AsistiÃ³", absent: "No asistiÃ³" };
+  const attendanceLabels = { all: "Todas", present: "Asistió", absent: "No asistió" };
   const audioLabels = { all: "Todos", ok: "Escuchado", pending: "Pendiente", exempt: "Repaso", noaudio: "Sin audio" };
   const gameLabels = { all: "Todos", passed: "Aprobado", pending: "Pendiente", failed: "Bajo 80%", nogame: "Sin juego" };
   const unlockLabels = { all: "Todos", unlocked: "Disponible", locked: "Bloqueado" };
-  const riskLabels = { all: "Todos", risk: "Requiere seguimiento", ok: "Al dÃ­a" };
+  const riskLabels = { all: "Todos", risk: "Requiere seguimiento", ok: "Al día" };
   const labelFor = (map, key) => map[key] || key;
   const alertMessageFor = (r) => {
     const firstName = (r.user.name || "").split(/\s+/)[0] || "hola";
@@ -2314,12 +2289,12 @@ function AdminDashboard({ data }) {
     const needs = [];
     if (!r.profileComplete) needs.push("completar tu perfil");
     if (!r.user.linkedCanon) needs.push("avisar al equipo si tu nombre de juego no coincide con tu perfil");
-    if (r.audioState === "pending") needs.push("escuchar el audio de acompaÃ±amiento");
+    if (r.audioState === "pending") needs.push("escuchar el audio de acompañamiento");
     if (r.gameState === "pending") needs.push("realizar el juego requerido");
-    if (r.gameState === "failed") needs.push("reforzar y aprobar el juego con mÃ­nimo 80%");
+    if (r.gameState === "failed") needs.push("reforzar y aprobar el juego con mínimo 80%");
     if (r.unlockState === "locked") needs.push("cerrar el bloque anterior para desbloquear el siguiente");
     if (!needs.length) needs.push("revisar tu avance");
-    return `Hola ${firstName}, te escribimos por tu preparaciÃ³n EJE. En el bloque "${blockName}" tienes pendiente: ${needs.join(", ")}. Entra a la plataforma para continuar tu ruta.`;
+    return `Hola ${firstName}, te escribimos por tu preparación EJE. En el bloque "${blockName}" tienes pendiente: ${needs.join(", ")}. Entra a la plataforma para continuar tu ruta.`;
   };
   const copyText = async (text, okMessage) => {
     try {
@@ -2327,7 +2302,7 @@ function AdminDashboard({ data }) {
       setAlertToast(okMessage);
       setTimeout(() => setAlertToast(""), 2600);
     } catch {
-      setAlertToast("No se pudo copiar automÃ¡ticamente. Selecciona el texto desde la exportaciÃ³n.");
+      setAlertToast("No se pudo copiar automáticamente. Selecciona el texto desde la exportación.");
     }
   };
   const copyFilteredAlerts = () => {
@@ -2368,7 +2343,7 @@ function AdminDashboard({ data }) {
     <div className="admin-dash">
       <div className="dash-hero card">
         <div>
-          <div className="dash-eyebrow">Vista de acompaÃ±amiento</div>
+          <div className="dash-eyebrow">Vista de acompañamiento</div>
           <div className="dash-title">Dashboard de aprendizaje</div>
           <div className="dim">Monitorea registro, avance de ruta, resultados y personas que necesitan seguimiento.</div>
         </div>
@@ -2447,7 +2422,7 @@ function AdminDashboard({ data }) {
           <div className="dash-panel-head">
             <div>
               <div className="dash-panel-title">Alertas de seguimiento</div>
-              <div className="dim">Prioriza a quiÃ©n acompaÃ±ar primero.</div>
+              <div className="dim">Prioriza a quién acompañar primero.</div>
             </div>
             <span className="dash-count">{alerts.length}</span>
           </div>
@@ -2476,14 +2451,14 @@ function AdminDashboard({ data }) {
             </div>
           </div>
           {blocks.length === 0 ? (
-            <div className="empty empty--compact">AÃºn no hay bloques activos.</div>
+            <div className="empty empty--compact">Aún no hay bloques activos.</div>
           ) : (
             <div className="block-stat-list">
               {blocks.map((b) => (
                 <div className="block-stat" key={b.id}>
                   <div className="block-stat-head">
                     <b>{b.title}</b>
-                    <span>{b.completed}/{b.total} Â· {b.percent}%</span>
+                    <span>{b.completed}/{b.total} · {b.percent}%</span>
                   </div>
                   <span className="mini-bar mini-bar--wide"><i style={{ width: `${b.percent}%` }} /></span>
                 </div>
@@ -2496,12 +2471,12 @@ function AdminDashboard({ data }) {
       <div className="card dash-panel dash-panel--wide">
         <div className="dash-panel-head">
           <div>
-            <div className="dash-panel-title">AcompaÃ±amiento por participante</div>
+            <div className="dash-panel-title">Acompañamiento por participante</div>
             <div className="dim">Estado general de ruta, resultados y perfil.</div>
           </div>
         </div>
         {registered === 0 ? (
-          <div className="empty empty--compact">AÃºn no hay usuarios registrados.</div>
+          <div className="empty empty--compact">Aún no hay usuarios registrados.</div>
         ) : filteredRows.length === 0 ? (
           <div className="empty empty--compact">No hay participantes con estos filtros.</div>
         ) : (
@@ -2527,7 +2502,7 @@ function AdminDashboard({ data }) {
                         <span className="avatar avatar--xs">{initials(r.user.name)}</span>
                         <span className="cell-main">
                           <b>{r.user.name}</b>
-                          <small>{r.route.completed}/{r.route.total} bloques Â· {r.route.percent}% ruta</small>
+                          <small>{r.route.completed}/{r.route.total} bloques · {r.route.percent}% ruta</small>
                         </span>
                       </span>
                     </td>
@@ -2546,7 +2521,7 @@ function AdminDashboard({ data }) {
                         Copiar
                       </button>
                     </td>
-                    <td><span className={`status-pill ${r.riskState === "risk" ? "status-pill--warn" : "status-pill--ok"}`}>{r.riskState === "risk" ? r.status : "Al dÃ­a"}</span></td>
+                    <td><span className={`status-pill ${r.riskState === "risk" ? "status-pill--warn" : "status-pill--ok"}`}>{r.riskState === "risk" ? r.status : "Al día"}</span></td>
                   </tr>
                 ))}
               </tbody>
@@ -2561,11 +2536,11 @@ function AdminDashboard({ data }) {
 /* ================= Editor de Ruta Formativa (admin) ================= */
 function RouteEditor({ data, persist, busy }) {
   const route = data.route || emptyRoute();
-  const [title, setTitle] = useState(route.title || "Ruta de PreparaciÃ³n");
+  const [title, setTitle] = useState(route.title || "Ruta de Preparación");
   const [blocks, setBlocks] = useState(route.blocks || []);
   const [dirty, setDirty] = useState(false);
-  const [confirmDel, setConfirmDel] = useState(null); // Ã­ndice del bloque a confirmar
-  const [uploading, setUploading] = useState(null); // Ã­ndice del bloque subiendo PDF
+  const [confirmDel, setConfirmDel] = useState(null); // índice del bloque a confirmar
+  const [uploading, setUploading] = useState(null); // índice del bloque subiendo PDF
   const [uploadingAudio, setUploadingAudio] = useState(null);
   const [upErr, setUpErr] = useState(null);
 
@@ -2578,7 +2553,7 @@ function RouteEditor({ data, persist, busy }) {
       const url = await sbUpload(file);
       setBlockField(bi, "pptUrl", url);
     } catch (e) {
-      setUpErr("No se pudo subir el archivo. Revisa tu conexiÃ³n e intÃ©ntalo de nuevo.");
+      setUpErr("No se pudo subir el archivo. Revisa tu conexión e inténtalo de nuevo.");
     } finally {
       setUploading(null);
     }
@@ -2588,21 +2563,21 @@ function RouteEditor({ data, persist, busy }) {
     if (!file) return;
     const fileName = String(file.name || "").toLowerCase();
     const looksAudio = /^audio\//.test(file.type || "") || /\.(mp3|m4a|wav|ogg|aac|opus)$/i.test(fileName);
-    if (!looksAudio) console.warn("El navegador no reconociÃ³ el tipo de audio; se subirÃ¡ igual por extensiÃ³n.", file.type, file.name);
+    if (!looksAudio) console.warn("El navegador no reconoció el tipo de audio; se subirá igual por extensión.", file.type, file.name);
     setUpErr(null);
     setUploadingAudio(bi);
     try {
       const url = await sbUpload(file);
       setBlockField(bi, "audioUrl", url);
     } catch (e) {
-      setUpErr("No se pudo subir el audio. Revisa tu conexiÃ³n e intÃ©ntalo de nuevo.");
+      setUpErr("No se pudo subir el audio. Revisa tu conexión e inténtalo de nuevo.");
     } finally {
       setUploadingAudio(null);
     }
   };
 
   useEffect(() => {
-    setTitle(route.title || "Ruta de PreparaciÃ³n");
+    setTitle(route.title || "Ruta de Preparación");
     setBlocks(route.blocks || []);
     setDirty(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -2665,7 +2640,7 @@ function RouteEditor({ data, persist, busy }) {
       }),
     }));
     const exercises = (data.exercises || []).map((ex) => resultLinks.has(ex.id) ? { ...ex, resultsUrl: resultLinks.get(ex.id) } : ex);
-    await persist({ ...data, exercises, route: { title: title.trim() || "Ruta de PreparaciÃ³n", blocks: clean } });
+    await persist({ ...data, exercises, route: { title: title.trim() || "Ruta de Preparación", blocks: clean } });
     setDirty(false);
   };
 
@@ -2673,32 +2648,32 @@ function RouteEditor({ data, persist, busy }) {
     <div className="stack">
       <div className="dim" style={{ fontSize: 13 }}>
         Arma la ruta como una serie de <b>bloques</b> (estaciones de la cancha). Cada bloque puede tener una
-        <b> presentaciÃ³n embebida</b> (Google Slides, Canva o PowerPoint online), y <b>botones</b> de juegos de
-        Wordwall y videos de YouTube, indicando en quÃ© lÃ¡mina aparecen. Para cada juego usa: link para jugar,
-        ejercicio del podio vinculado y, opcionalmente, link de resultados para administraciÃ³n. El Ãºltimo bloque es el <b>gol</b>.
+        <b> presentación embebida</b> (Google Slides, Canva o PowerPoint online), y <b>botones</b> de juegos de
+        Wordwall y videos de YouTube, indicando en qué lámina aparecen. Para cada juego usa: link para jugar,
+        ejercicio del podio vinculado y, opcionalmente, link de resultados para administración. El último bloque es el <b>gol</b>.
       </div>
 
       <div className="card">
-        <label className="lbl">TÃ­tulo de la ruta</label>
+        <label className="lbl">Título de la ruta</label>
         <input className="inp" value={title} onChange={(e) => mark(() => setTitle(e.target.value))} placeholder="Ej. Camino al Retiro EJE 2026" />
       </div>
 
-      {blocks.length === 0 && <div className="empty">AÃºn no hay bloques. Agrega el primero abajo.</div>}
+      {blocks.length === 0 && <div className="empty">Aún no hay bloques. Agrega el primero abajo.</div>}
 
       {blocks.map((b, bi) => (
         <div key={b.id} className={`card block-edit ${b.locked ? "block-edit--locked" : ""}`}>
           <div className="block-edit-head">
-            <div className="block-edit-n">{bi === blocks.length - 1 && blocks.length > 1 ? "ðŸ¥…" : bi + 1}</div>
-            <input className="inp" value={b.title} onChange={(e) => setBlockField(bi, "title", e.target.value)} placeholder={`TÃ­tulo del bloque ${bi + 1}`} />
+            <div className="block-edit-n">{bi === blocks.length - 1 && blocks.length > 1 ? "🥅" : bi + 1}</div>
+            <input className="inp" value={b.title} onChange={(e) => setBlockField(bi, "title", e.target.value)} placeholder={`Título del bloque ${bi + 1}`} />
             <div className="block-edit-move">
-              <button className="icon-btn" title="Subir" onClick={() => moveBlock(bi, -1)} disabled={bi === 0}>â†‘</button>
-              <button className="icon-btn" title="Bajar" onClick={() => moveBlock(bi, 1)} disabled={bi === blocks.length - 1}>â†“</button>
-              <button className="icon-btn" title="Eliminar bloque" onClick={() => setConfirmDel(bi)}>âœ•</button>
+              <button className="icon-btn" title="Subir" onClick={() => moveBlock(bi, -1)} disabled={bi === 0}>↑</button>
+              <button className="icon-btn" title="Bajar" onClick={() => moveBlock(bi, 1)} disabled={bi === blocks.length - 1}>↓</button>
+              <button className="icon-btn" title="Eliminar bloque" onClick={() => setConfirmDel(bi)}>✕</button>
             </div>
           </div>
 
           <button className={`lock-toggle ${b.locked ? "lock-toggle--on" : ""}`} onClick={() => toggleLocked(bi)}>
-            <span className="lock-ic">{b.locked ? "ðŸ”’" : "ðŸ”“"}</span>
+            <span className="lock-ic">{b.locked ? "🔒" : "🔓"}</span>
             <span className="lock-txt">
               <b>{b.locked ? "Bloqueado para participantes" : "Visible para participantes"}</b>
               <span className="dim">{b.locked ? "Se muestra con candado; no pueden abrir su contenido." : "Cualquiera puede abrirlo y ver su contenido."}</span>
@@ -2708,31 +2683,31 @@ function RouteEditor({ data, persist, busy }) {
 
           {confirmDel === bi && (
             <div className="del-confirm">
-              <span>Â¿Eliminar este bloque y sus recursos? No se puede deshacer.</span>
+              <span>¿Eliminar este bloque y sus recursos? No se puede deshacer.</span>
               <div className="del-confirm-actions">
-                <button className="btn btn--danger-o btn--sm" onClick={() => removeBlock(bi)}>SÃ­, eliminar</button>
+                <button className="btn btn--danger-o btn--sm" onClick={() => removeBlock(bi)}>Sí, eliminar</button>
                 <button className="btn btn--ghost btn--sm" onClick={() => setConfirmDel(null)}>Cancelar</button>
               </div>
             </div>
           )}
 
-          <label className="lbl">DescripciÃ³n breve (opcional)</label>
-          <input className="inp" value={b.subtitle} onChange={(e) => setBlockField(bi, "subtitle", e.target.value)} placeholder="Ej. Primera sesiÃ³n: los 4 niveles del encuentro" />
+          <label className="lbl">Descripción breve (opcional)</label>
+          <input className="inp" value={b.subtitle} onChange={(e) => setBlockField(bi, "subtitle", e.target.value)} placeholder="Ej. Primera sesión: los 4 niveles del encuentro" />
 
-          <label className="lbl" style={{ marginTop: 10 }}>PresentaciÃ³n del bloque</label>
+          <label className="lbl" style={{ marginTop: 10 }}>Presentación del bloque</label>
           <div className="ppt-input-group">
             <label className="btn btn--teal-o btn--sm ppt-upload-btn">
-              {uploading === bi ? "Subiendoâ€¦" : "ðŸ“¤ Subir PDF"}
+              {uploading === bi ? "Subiendo…" : "📤 Subir PDF"}
               <input type="file" accept="application/pdf" style={{ display: "none" }} disabled={uploading === bi} onChange={(e) => { if (e.target.files[0]) uploadPdf(bi, e.target.files[0]); e.target.value = ""; }} />
             </label>
-            <span className="dim" style={{ fontSize: 12 }}>â€” o pega un link (Google Slides, Canva, YouTube no) â€”</span>
+            <span className="dim" style={{ fontSize: 12 }}>— o pega un link (Google Slides, Canva, YouTube no) —</span>
           </div>
-          <input className="inp" value={b.pptUrl} onChange={(e) => setBlockField(bi, "pptUrl", e.target.value)} placeholder="Sube un PDF arriba, o pega aquÃ­ el link de tu presentaciÃ³n" />
-          {b.pptUrl && b.pptUrl.includes("/storage/v1/object/public/") && <div className="ok-inline">âœ… PDF subido a la base de datos â€” se verÃ¡ dentro de la app.</div>}
-          {b.pptUrl && !isValidUrl(b.pptUrl) && <div className="warn-inline">âš  El link debe empezar con http:// o https://</div>}
+          <input className="inp" value={b.pptUrl} onChange={(e) => setBlockField(bi, "pptUrl", e.target.value)} placeholder="Sube un PDF arriba, o pega aquí el link de tu presentación" />
+          {b.pptUrl && b.pptUrl.includes("/storage/v1/object/public/") && <div className="ok-inline">✅ PDF subido a la base de datos — se verá dentro de la app.</div>}
+          {b.pptUrl && !isValidUrl(b.pptUrl) && <div className="warn-inline">⚠ El link debe empezar con http:// o https://</div>}
           {upErr && uploading === null && <div className="warn-inline">{upErr}</div>}
 
-          <label className="lbl" style={{ marginTop: 10 }}>Audio de acompaÃ±amiento</label>
+          <label className="lbl" style={{ marginTop: 10 }}>Audio de acompañamiento</label>
           <div className="ppt-input-group">
             <label className="btn btn--teal-o btn--sm ppt-upload-btn">
               {uploadingAudio === bi ? "Subiendo audio..." : "Subir audio"}
@@ -2743,7 +2718,7 @@ function RouteEditor({ data, persist, busy }) {
           <input className="inp" value={b.audioUrl || ""} onChange={(e) => setBlockField(bi, "audioUrl", e.target.value)} placeholder="Sube un audio o pega un link MP3/M4A" />
 
           <div className="ok-inline" style={{ marginTop: 8 }}>
-            La asistencia de este bloque se marca desde la pestaÃ±a Asistencia.
+            La asistencia de este bloque se marca desde la pestaña Asistencia.
           </div>
 
           <div className="res-edit-groups">
@@ -2751,10 +2726,10 @@ function RouteEditor({ data, persist, busy }) {
               <div className="res-edit-list">
                 {b.resources.map((r, ri) => (
                   <div key={r.id} className={`res-edit res-edit--${r.type}`}>
-                    <span className="res-edit-ic">{r.type === "game" ? "ðŸŽ®" : "â–¶ï¸"}</span>
-                    <input className="inp inp--sm" value={r.label} onChange={(e) => setResField(bi, ri, "label", e.target.value)} placeholder={r.type === "game" ? "Nombre del juego" : "TÃ­tulo del video"} />
+                    <span className="res-edit-ic">{r.type === "game" ? "🎮" : "▶️"}</span>
+                    <input className="inp inp--sm" value={r.label} onChange={(e) => setResField(bi, ri, "label", e.target.value)} placeholder={r.type === "game" ? "Nombre del juego" : "Título del video"} />
                     <input className="inp inp--sm" value={r.url} onChange={(e) => setResField(bi, ri, "url", e.target.value)} placeholder={r.type === "game" ? "Link para jugar Wordwall" : "Link de YouTube"} />
-                    <input className="inp inp--slide" value={r.slide} onChange={(e) => setResField(bi, ri, "slide", e.target.value.replace(/\D/g, ""))} placeholder="LÃ¡m." title="NÂº de lÃ¡mina" />
+                    <input className="inp inp--slide" value={r.slide} onChange={(e) => setResField(bi, ri, "slide", e.target.value.replace(/\D/g, ""))} placeholder="Lám." title="Nº de lámina" />
                     {r.type === "game" && (
                       <>
                         <input className="inp inp--sm res-edit-wide" value={r.resultsUrl || ""} onChange={(e) => setResField(bi, ri, "resultsUrl", e.target.value)} placeholder="Link de ver resultados (admin)" />
@@ -2762,27 +2737,27 @@ function RouteEditor({ data, persist, busy }) {
                           <option value="">Vincular con ejercicio del podio</option>
                           {data.exercises.map((ex) => <option key={ex.id} value={ex.id}>{ex.title}</option>)}
                         </select>
-                        <input className="inp inp--slide" value={r.passingPct ?? PASSING_PCT} onChange={(e) => setResField(bi, ri, "passingPct", e.target.value.replace(/\D/g, ""))} title="% mÃ­nimo" />
+                        <input className="inp inp--slide" value={r.passingPct ?? PASSING_PCT} onChange={(e) => setResField(bi, ri, "passingPct", e.target.value.replace(/\D/g, ""))} title="% mínimo" />
                       </>
                     )}
-                    <button className="icon-btn" title="Quitar recurso" onClick={() => removeResource(bi, ri)}>âœ•</button>
+                    <button className="icon-btn" title="Quitar recurso" onClick={() => removeResource(bi, ri)}>✕</button>
                   </div>
                 ))}
               </div>
             )}
             <div className="res-add-row">
-              <button className="btn btn--teal-o btn--sm" onClick={() => addResource(bi, "game")}>ðŸŽ® + Juego Wordwall</button>
-              <button className="btn btn--danger-o btn--sm" onClick={() => addResource(bi, "video")}>â–¶ï¸ + Video YouTube</button>
+              <button className="btn btn--teal-o btn--sm" onClick={() => addResource(bi, "game")}>🎮 + Juego Wordwall</button>
+              <button className="btn btn--danger-o btn--sm" onClick={() => addResource(bi, "video")}>▶️ + Video YouTube</button>
             </div>
           </div>
         </div>
       ))}
 
-      <button className="btn btn--teal-o add-block-btn" onClick={addBlock}>âš½ + Agregar bloque</button>
+      <button className="btn btn--teal-o add-block-btn" onClick={addBlock}>⚽ + Agregar bloque</button>
 
       <div className="route-save">
         <button className="btn btn--gold" onClick={save} disabled={busy || !dirty}>
-          {dirty ? "Guardar ruta" : "Ruta guardada âœ“"}
+          {dirty ? "Guardar ruta" : "Ruta guardada ✓"}
         </button>
         {dirty && <span className="dim" style={{ fontSize: 13 }}>Tienes cambios sin guardar.</span>}
       </div>
@@ -2842,9 +2817,12 @@ function ExerciseEditor({ exercise, data, persist, busy, onClose }) {
     }
     setUrlBusy(true);
     try {
-      const synced = await syncExerciseFromResultsUrl({ ...exercise, resultsUrl: resultsUrl.trim(), students });
-      setStudents(synced.exercise.students);
-      setUrlMsg({ ok: true, t: `Resultados actualizados: ${synced.added} nuevo(s), ${synced.updated} actualizado(s).` });
+      const imported = await importWordwallResultsFromUrl(resultsUrl.trim());
+      const incoming = (imported.students || []).map((s) => ({ ...s }));
+      if (!incoming.length) throw new Error("No se encontraron participantes en ese link.");
+      const { students: merged, added, updated } = mergeStudents(students, incoming);
+      setStudents(merged);
+      setUrlMsg({ ok: true, t: `Resultados actualizados: ${added} nuevo(s), ${updated} actualizado(s).` });
     } catch (e) {
       setUrlMsg({ ok: false, t: e.message || "No se pudo actualizar desde ese link." });
     } finally {
@@ -2872,26 +2850,26 @@ function ExerciseEditor({ exercise, data, persist, busy, onClose }) {
       <div className="modal modal--wide" onClick={(e) => e.stopPropagation()}>
         <div className="modal-head">
           <div className="disp modal-title">EDITAR EJERCICIO</div>
-          <button className="btn btn--ghost btn--sm" onClick={onClose}>Cancelar âœ•</button>
+          <button className="btn btn--ghost btn--sm" onClick={onClose}>Cancelar ✕</button>
         </div>
 
         <div className="stack">
           <div>
-            <label className="lbl">TÃ­tulo</label>
+            <label className="lbl">Título</label>
             <input className="inp" value={title} onChange={(e) => setTitle(e.target.value)} />
           </div>
 
           <div>
             <label className="lbl">Link de resultados Wordwall</label>
             <div className="link-sync-row">
-            <input className="inp" value={resultsUrl} onChange={(e) => setResultsUrl(e.target.value)} placeholder="Pega aquÃ­ el link de resultados de Wordwall" />
+            <input className="inp" value={resultsUrl} onChange={(e) => setResultsUrl(e.target.value)} placeholder="Pega aquí el link de resultados de Wordwall" />
               <button className="btn btn--teal-o btn--sm" onClick={applyResultsUrl} disabled={urlBusy || !resultsUrl.trim()}>
-                {urlBusy ? "Intentando..." : "Intentar actualizar"}
+                {urlBusy ? "Actualizando..." : "Actualizar desde link"}
               </button>
             </div>
             {urlMsg && <div className={urlMsg.ok ? "ok-inline" : "warn-inline"}>{urlMsg.t}</div>}
             <div className="dim" style={{ fontSize: 12, marginTop: 6 }}>
-              Wordwall puede bloquear la lectura directa de su vista de resultados. Si pasa, abre el link, exporta el Excel o pega el detallado.
+              Si Wordwall no permite lectura automática, usa el Excel o pega el detallado.
             </div>
           </div>
 
@@ -2901,7 +2879,7 @@ function ExerciseEditor({ exercise, data, persist, busy, onClose }) {
 
           <div>
             <button className="btn btn--teal-o btn--sm" onClick={() => setPasteOpen(!pasteOpen)}>
-              {pasteOpen ? "Ocultar" : "ðŸ“‹ Pegar detallado de Wordwall para actualizar puntuaciones"}
+              {pasteOpen ? "Ocultar" : "📋 Pegar detallado de Wordwall para actualizar puntuaciones"}
             </button>
             {pasteOpen && (
               <div style={{ marginTop: 10 }}>
@@ -2910,7 +2888,7 @@ function ExerciseEditor({ exercise, data, persist, busy, onClose }) {
                   value={pasteText}
                   onChange={(e) => setPasteText(e.target.value)}
                   rows={5}
-                  placeholder={"Alumno\tEnviado\tPuntuaciÃ³n\tCorrecto\tIncorrecto\nEly\t19:32 - 27 jun. 2026\t1036\t7\t0"}
+                  placeholder={"Alumno\tEnviado\tPuntuación\tCorrecto\tIncorrecto\nEly\t19:32 - 27 jun. 2026\t1036\t7\t0"}
                 />
                 <button className="btn btn--teal btn--sm" style={{ marginTop: 8 }} onClick={applyPaste}>Aplicar a la tabla</button>
               </div>
@@ -2932,10 +2910,10 @@ function ExerciseEditor({ exercise, data, persist, busy, onClose }) {
                 {students.map((s, i) => (
                   <tr key={i}>
                     <td><b>{s.raw}</b></td>
-                    <td><input className="inp inp--cell" value={s.score ?? ""} onChange={(e) => setField(i, "score", e.target.value.replace(/\D/g, ""))} placeholder="â€”" /></td>
+                    <td><input className="inp inp--cell" value={s.score ?? ""} onChange={(e) => setField(i, "score", e.target.value.replace(/\D/g, ""))} placeholder="—" /></td>
                     <td><input className="inp inp--cell inp--xs" value={s.correct} onChange={(e) => setField(i, "correct", e.target.value.replace(/\D/g, ""))} /></td>
                     <td><input className="inp inp--cell inp--xs" value={s.total} onChange={(e) => setField(i, "total", e.target.value.replace(/\D/g, ""))} /></td>
-                    <td><button className="icon-btn" title="Quitar participante" onClick={() => removeRow(i)}>âœ•</button></td>
+                    <td><button className="icon-btn" title="Quitar participante" onClick={() => removeRow(i)}>✕</button></td>
                   </tr>
                 ))}
               </tbody>
@@ -3017,9 +2995,9 @@ function AttendanceAdmin({ data, busy, onSave }) {
     <div className="attendance-admin">
       <div className="card attendance-hero">
         <div>
-          <div className="dash-eyebrow">Asistencia por sesiÃ³n</div>
+          <div className="dash-eyebrow">Asistencia por sesión</div>
           <div className="dash-title">Control por bloque</div>
-          <div className="dim">Marca quiÃ©n asistiÃ³ a cada bloque. Si asistiÃ³, el audio queda como repaso; los juegos siguen siendo obligatorios.</div>
+          <div className="dim">Marca quién asistió a cada bloque. Si asistió, el audio queda como repaso; los juegos siguen siendo obligatorios.</div>
         </div>
         <button className="btn btn--gold btn--sm" onClick={() => onSave(blockId, present)} disabled={busy || !block}>
           Guardar asistencia
@@ -3028,7 +3006,7 @@ function AttendanceAdmin({ data, busy, onSave }) {
 
       <div className="card attendance-tools">
         <label className="filter-group">
-          <span>Bloque / sesiÃ³n</span>
+          <span>Bloque / sesión</span>
           <select className="inp" value={blockId} onChange={(e) => setBlockId(e.target.value)}>
             {blocks.map((b, idx) => (
               <option key={b.id} value={b.id}>{idx + 1}. {b.title || `Bloque ${idx + 1}`}{b.locked ? " (bloqueado)" : ""}</option>
@@ -3050,25 +3028,25 @@ function AttendanceAdmin({ data, busy, onSave }) {
       <div className="attendance-summary">
         <div className="card dash-kpi"><span>{presentCount}</span><b>Asistieron</b><small>{users.length} participantes registrados</small></div>
         <div className="card dash-kpi"><span>{users.length ? users.length - presentCount : 0}</span><b>No marcados</b><small>Para este bloque</small></div>
-        <div className="card dash-kpi"><span>{filteredUsers.length}</span><b>Visibles</b><small>SegÃºn bÃºsqueda actual</small></div>
+        <div className="card dash-kpi"><span>{filteredUsers.length}</span><b>Visibles</b><small>Según búsqueda actual</small></div>
       </div>
 
       <div className="card attendance-list">
         {filteredUsers.length === 0 ? (
-          <div className="empty empty--compact">No hay participantes con esa bÃºsqueda.</div>
+          <div className="empty empty--compact">No hay participantes con esa búsqueda.</div>
         ) : (
           filteredUsers.map((u) => {
             const checked = present.has(u.id);
             return (
               <button key={u.id} className={`attendance-row ${checked ? "attendance-row--on" : ""}`} onClick={() => toggle(u.id)}>
-                <span className="attendance-check">{checked ? "âœ“" : ""}</span>
+                <span className="attendance-check">{checked ? "✓" : ""}</span>
                 <span className="avatar avatar--xs">{initials(u.name)}</span>
                 <span className="attendance-person">
                   <b>{u.name}</b>
-                  <small>{u.linkedCanon ? `Podio: ${u.linkedCanon}` : "Sin vÃ­nculo al podio"}</small>
+                  <small>{u.linkedCanon ? `Podio: ${u.linkedCanon}` : "Sin vínculo al podio"}</small>
                 </span>
                 <span className={`mini-state ${checked ? "mini-state--present" : "mini-state--absent"}`}>
-                  {checked ? "AsistiÃ³" : "No marcado"}
+                  {checked ? "Asistió" : "No marcado"}
                 </span>
               </button>
             );
@@ -3079,7 +3057,7 @@ function AttendanceAdmin({ data, busy, onSave }) {
   );
 }
 
-/* ================= Panel de administraciÃ³n ================= */
+/* ================= Panel de administración ================= */
 const QUESTION_STATUS = [
   ["new", "Nueva"],
   ["reviewed", "Revisada"],
@@ -3097,14 +3075,14 @@ function QuestionBox({ user, questions, onSubmit, onClose }) {
   const send = async () => {
     setMsg(null);
     if (text.trim().length < 8) {
-      setMsg({ ok: false, t: "Escribe una pregunta un poco mÃ¡s completa." });
+      setMsg({ ok: false, t: "Escribe una pregunta un poco más completa." });
       return;
     }
     setBusy(true);
     try {
       await onSubmit(text.trim());
       setText("");
-      setMsg({ ok: true, t: "Pregunta enviada. El equipo la revisarÃ¡." });
+      setMsg({ ok: true, t: "Pregunta enviada. El equipo la revisará." });
     } catch (e) {
       setMsg({ ok: false, t: "No se pudo enviar la pregunta. Intentalo de nuevo." });
     } finally {
@@ -3116,7 +3094,7 @@ function QuestionBox({ user, questions, onSubmit, onClose }) {
     <div className="overlay" onClick={onClose}>
       <div className="modal modal--mid" onClick={(e) => e.stopPropagation()}>
         <div className="modal-head">
-          <div className="disp modal-title">BUZÃ“N DE PREGUNTAS</div>
+          <div className="disp modal-title">BUZÓN DE PREGUNTAS</div>
           <button className="btn btn--ghost btn--sm" onClick={onClose}>Cerrar</button>
         </div>
         <div className="stack">
@@ -3125,7 +3103,7 @@ function QuestionBox({ user, questions, onSubmit, onClose }) {
             rows={5}
             value={text}
             onChange={(e) => setText(e.target.value)}
-            placeholder="Escribe tu pregunta para el equipo de acompaÃ±amiento"
+            placeholder="Escribe tu pregunta para el equipo de acompañamiento"
           />
           {msg && <div className={msg.ok ? "ok-inline" : "warn-inline"}>{msg.t}</div>}
           <button className="btn btn--gold" onClick={send} disabled={busy || !text.trim()}>
@@ -3135,7 +3113,7 @@ function QuestionBox({ user, questions, onSubmit, onClose }) {
           <div className="question-history">
             <div className="requirements-title">Mis preguntas recientes</div>
             {mine.length === 0 ? (
-              <div className="empty empty--compact">AÃºn no has enviado preguntas.</div>
+              <div className="empty empty--compact">Aún no has enviado preguntas.</div>
             ) : (
               mine.map((q) => (
                 <div key={q.id} className="question-item">
@@ -3179,8 +3157,8 @@ function QuestionsAdmin({ data, busy, onUpdate }) {
     <div className="questions-admin">
       <div className="card attendance-hero">
         <div>
-          <div className="dash-eyebrow">AcompaÃ±amiento</div>
-          <div className="dash-title">BuzÃ³n de preguntas</div>
+          <div className="dash-eyebrow">Acompañamiento</div>
+          <div className="dash-title">Buzón de preguntas</div>
           <div className="dim">Revisa preguntas generales, marca estados y deja una respuesta visible para el participante.</div>
         </div>
       </div>
@@ -3298,7 +3276,7 @@ function RoleplayAdmin({ data, persist, busy }) {
     const fileName = String(file.name || "").toLowerCase();
     const looksAudio = /^audio\//.test(file.type || "") || /\.(mp3|m4a|wav|ogg|aac|opus)$/i.test(fileName);
     const looksPdf = file.type === "application/pdf" || /\.pdf$/i.test(fileName);
-    if (resource.type === "audio" && !looksAudio) console.warn("El navegador no reconociÃ³ el tipo de audio; se subirÃ¡ igual por extensiÃ³n.", file.type, file.name);
+    if (resource.type === "audio" && !looksAudio) console.warn("El navegador no reconoció el tipo de audio; se subirá igual por extensión.", file.type, file.name);
     if (resource.type === "file" && !looksPdf) {
       setMsg("El archivo del coordinador debe ser PDF.");
       return;
@@ -3310,9 +3288,9 @@ function RoleplayAdmin({ data, persist, busy }) {
       const url = await sbUpload(file);
       setResourceField(roleKey, idx, "url", url);
       if (!resource.label) setResourceField(roleKey, idx, "label", file.name.replace(/\.[^.]+$/, ""));
-      setMsg("Archivo subido. Recuerda guardar la configuraciÃ³n.");
+      setMsg("Archivo subido. Recuerda guardar la configuración.");
     } catch {
-      setMsg("No se pudo subir el archivo. Revisa tu conexiÃ³n e intÃ©ntalo otra vez.");
+      setMsg("No se pudo subir el archivo. Revisa tu conexión e inténtalo otra vez.");
     } finally {
       setUploading("");
     }
@@ -3341,7 +3319,7 @@ function RoleplayAdmin({ data, persist, busy }) {
     const typeOptions = typeOptionsFor(roleKey);
     return (
       <div className="role-resource-list">
-        {resources.length === 0 && <div className="empty empty--compact">TodavÃ­a no hay recursos para este rol.</div>}
+        {resources.length === 0 && <div className="empty empty--compact">Todavía no hay recursos para este rol.</div>}
         {resources.map((r, idx) => (
           <div key={r.id} className="role-resource-row">
             {typeOptions.length > 1 ? (
@@ -3373,7 +3351,7 @@ function RoleplayAdmin({ data, persist, busy }) {
             ) : (
               <input className="inp inp--sm" value={r.note || ""} onChange={(e) => setResourceField(roleKey, idx, "note", e.target.value)} placeholder="Nota breve opcional" />
             )}
-            <button className="icon-btn" title="Quitar recurso" onClick={() => removeResource(roleKey, idx)}>âœ•</button>
+            <button className="icon-btn" title="Quitar recurso" onClick={() => removeResource(roleKey, idx)}>✕</button>
           </div>
         ))}
       </div>
@@ -3384,9 +3362,9 @@ function RoleplayAdmin({ data, persist, busy }) {
     <div className="role-admin stack">
       <div className="card dash-hero">
         <div>
-          <div className="dash-eyebrow">PrÃ¡ctica por rol</div>
+          <div className="dash-eyebrow">Práctica por rol</div>
           <div className="dash-title">Juego de roles</div>
-          <div className="dim">Configura casos, juegos y materiales. El uso se registra para ver participaciÃ³n desde administraciÃ³n.</div>
+          <div className="dim">Configura casos, juegos y materiales. El uso se registra para ver participación desde administración.</div>
         </div>
         <button className="btn btn--gold btn--sm" onClick={save} disabled={busy || !dirty}>
           {dirty ? "Guardar juego de roles" : "Guardado"}
@@ -3396,7 +3374,7 @@ function RoleplayAdmin({ data, persist, busy }) {
 
       <div className="dash-kpis">
         <div className="card dash-kpi"><span>{stats.sessions}</span><b>Sesiones asesor</b><small>{stats.activeSessions} abiertas</small></div>
-        <div className="card dash-kpi"><span>{stats.sessionParticipants}</span><b>Participantes en sesiones</b><small>{stats.uniqueSessionUsers} Ãºnicos</small></div>
+        <div className="card dash-kpi"><span>{stats.sessionParticipants}</span><b>Participantes en sesiones</b><small>{stats.uniqueSessionUsers} únicos</small></div>
         <div className="card dash-kpi"><span>{stats.resourceOpens}</span><b>Usos de recursos</b><small>{stats.uniqueEventUsers} usuarios</small></div>
         <div className="card dash-kpi"><span>{stats.totalUniqueUsers}</span><b>Alcance total</b><small>Sesiones y recursos</small></div>
       </div>
@@ -3414,8 +3392,8 @@ function RoleplayAdmin({ data, persist, busy }) {
             return (
               <div key={role.key} className="role-usage-card">
                 <b>{role.label}</b>
-                <span>{use.sessions} sesiones Â· {use.participants} participantes</span>
-                <span>{use.opens} aperturas Â· {use.users.size} usuarios</span>
+                <span>{use.sessions} sesiones · {use.participants} participantes</span>
+                <span>{use.opens} aperturas · {use.users.size} usuarios</span>
               </div>
             );
           })}
@@ -3425,7 +3403,7 @@ function RoleplayAdmin({ data, persist, busy }) {
       <div className="card dash-panel">
         <div className="dash-panel-head">
           <div>
-            <div className="dash-panel-title">Casos para prÃ¡ctica de asesor</div>
+            <div className="dash-panel-title">Casos para práctica de asesor</div>
             <div className="dim">Basado en el Anexo 4 del Manual AS-COS. Puedes editarlo si quieres ajustar el lenguaje.</div>
           </div>
           <button className="btn btn--teal-o btn--sm" onClick={addType}>+ Agregar caso</button>
@@ -3434,8 +3412,8 @@ function RoleplayAdmin({ data, persist, busy }) {
           {local.participantTypes.map((t, idx) => (
             <div key={t.id} className="ascos-edit-row">
               <input className="inp inp--sm" value={t.name} onChange={(e) => setTypeField(idx, "name", e.target.value)} placeholder="Tipo de joven" />
-              <input className="inp inp--sm ascos-guide" value={t.guide} onChange={(e) => setTypeField(idx, "guide", e.target.value)} placeholder="DescripciÃ³n breve" />
-              <button className="icon-btn" title="Quitar caso" onClick={() => removeType(idx)}>âœ•</button>
+              <input className="inp inp--sm ascos-guide" value={t.guide} onChange={(e) => setTypeField(idx, "guide", e.target.value)} placeholder="Descripción breve" />
+              <button className="icon-btn" title="Quitar caso" onClick={() => removeType(idx)}>✕</button>
             </div>
           ))}
         </div>
@@ -3446,7 +3424,7 @@ function RoleplayAdmin({ data, persist, busy }) {
           <div className="dash-panel-head">
             <div>
               <div className="dash-panel-title">Apoyo interno</div>
-              <div className="dim">Juegos prÃ¡cticos de Wordwall.</div>
+              <div className="dim">Juegos prácticos de Wordwall.</div>
             </div>
             <div className="row-actions">
               <button className="btn btn--teal-o btn--sm" onClick={() => addResource("apoyo_interno", "materials")}>+ Momento/materiales</button>
@@ -3459,7 +3437,7 @@ function RoleplayAdmin({ data, persist, busy }) {
           <div className="dash-panel-head">
             <div>
               <div className="dash-panel-title">Apoyo externo</div>
-              <div className="dim">Juegos prÃ¡cticos de Wordwall.</div>
+              <div className="dim">Juegos prácticos de Wordwall.</div>
             </div>
             <div className="row-actions">
               <button className="btn btn--teal-o btn--sm" onClick={() => addResource("apoyo_externo", "html")}>+ Juego HTML</button>
@@ -3480,8 +3458,8 @@ function RoleplayAdmin({ data, persist, busy }) {
             </div>
           </div>
           <div className="admin-helper-strip">
-            <span><b>Audio:</b> + Audio â†’ Subir audio â†’ Guardar juego de roles.</span>
-            <span><b>PDF:</b> + PDF â†’ Subir PDF â†’ Guardar juego de roles.</span>
+            <span><b>Audio:</b> + Audio → Subir audio → Guardar juego de roles.</span>
+            <span><b>PDF:</b> + PDF → Subir PDF → Guardar juego de roles.</span>
           </div>
           <div className="admin-helper-strip">
             <span><b>Google Drive:</b> pega el link con permiso "cualquiera con el enlace" y la app lo convierte para reproducir.</span>
@@ -3493,17 +3471,17 @@ function RoleplayAdmin({ data, persist, busy }) {
       <div className="card dash-panel">
         <div className="dash-panel-head">
           <div>
-            <div className="dash-panel-title">Ãšltimas sesiones de asesor</div>
-            <div className="dim">CÃ³digos creados por participantes para practicar.</div>
+            <div className="dash-panel-title">Últimas sesiones de asesor</div>
+            <div className="dim">Códigos creados por participantes para practicar.</div>
           </div>
         </div>
         {(data.roleplaySessions || []).length === 0 ? (
-          <div className="empty empty--compact">AÃºn no hay sesiones creadas.</div>
+          <div className="empty empty--compact">Aún no hay sesiones creadas.</div>
         ) : (
           <div className="dash-table-wrap">
             <table className="dash-table">
               <thead>
-                <tr><th>CÃ³digo</th><th>Creador</th><th>Participantes</th><th>Estado</th><th>Creada</th></tr>
+                <tr><th>Código</th><th>Creador</th><th>Participantes</th><th>Estado</th><th>Creada</th></tr>
               </thead>
               <tbody>
                 {(data.roleplaySessions || []).slice(0, 12).map((s) => (
@@ -3527,7 +3505,6 @@ function RoleplayAdmin({ data, persist, busy }) {
 function AdminPanel({ data, setData, onExit }) {
   const [tab, setTab] = useState(() => readStore(STORE.adminTab, "dashboard"));
   const [busy, setBusy] = useState(false);
-  const [syncBusy, setSyncBusy] = useState(false);
   const [msg, setMsg] = useState(null);
   const [parsed, setParsed] = useState(null);
   const [titleEdit, setTitleEdit] = useState("");
@@ -3553,7 +3530,7 @@ function AdminPanel({ data, setData, onExit }) {
       setData(next);
       setMsg({ ok: true, t: "Guardado correctamente." });
     } catch (e) {
-      setMsg({ ok: false, t: "No se pudo guardar. Revisa tu conexiÃ³n e intÃ©ntalo de nuevo." });
+      setMsg({ ok: false, t: "No se pudo guardar. Revisa tu conexión e inténtalo de nuevo." });
       throw new Error("persist");
     } finally {
       setBusy(false);
@@ -3616,7 +3593,7 @@ function AdminPanel({ data, setData, onExit }) {
       const buf = await file.arrayBuffer();
       const p = parseWorkbook(buf);
       if (!p.students.length) {
-        setMsg({ ok: false, t: "No se encontraron resultados de alumnos en el archivo. Â¿Es el export de Wordwall ('Resultados por alumno')?" });
+        setMsg({ ok: false, t: "No se encontraron resultados de alumnos en el archivo. ¿Es el export de Wordwall ('Resultados por alumno')?" });
         return;
       }
       setParsed(p);
@@ -3625,7 +3602,7 @@ function AdminPanel({ data, setData, onExit }) {
       const nm = {};
       for (const s of p.students) if (!data.aliases[norm(s.raw)]) nm[norm(s.raw)] = "__new__";
       setNameMap(nm);
-      // Â¿existe ya un ejercicio con este tÃ­tulo? â†’ sugerir fusiÃ³n
+      // ¿existe ya un ejercicio con este título? → sugerir fusión
       const twin = data.exercises.find((e) => norm(e.title) === norm(p.title));
       if (twin) {
         setMergeMode("merge");
@@ -3717,7 +3694,7 @@ function AdminPanel({ data, setData, onExit }) {
       } else {
         const ex = {
           id: uid(),
-          title: titleEdit.trim() || parsed.title || "Ejercicio sin tÃ­tulo",
+          title: titleEdit.trim() || parsed.title || "Ejercicio sin título",
           date: new Date().toISOString(),
           sortBy: "score",
           resultsUrl: "",
@@ -3772,69 +3749,23 @@ function AdminPanel({ data, setData, onExit }) {
   };
 
   const editingEx = data.exercises.find((e) => e.id === editing);
-  const exercisesWithResultLinks = useMemo(
-    () => (data.exercises || []).filter((ex) => String(ex.resultsUrl || "").trim()),
-    [data.exercises]
-  );
-
-  const syncAllResultLinks = async () => {
-    if (!exercisesWithResultLinks.length) {
-      setMsg({ ok: false, t: "Aun no hay ejercicios con link de resultados guardado." });
-      return;
-    }
-    setSyncBusy(true);
-    setMsg(null);
-    let syncedCount = 0;
-    let addedTotal = 0;
-    let updatedTotal = 0;
-    const failures = [];
-    const nextExercises = [];
-    for (const ex of data.exercises || []) {
-      if (!String(ex.resultsUrl || "").trim()) {
-        nextExercises.push(ex);
-        continue;
-      }
-      try {
-        const synced = await syncExerciseFromResultsUrl(ex);
-        nextExercises.push(synced.exercise);
-        syncedCount++;
-        addedTotal += synced.added;
-        updatedTotal += synced.updated;
-      } catch (e) {
-        nextExercises.push(ex);
-        failures.push(`${ex.title}: ${e.message || "no se pudo leer el link"}`);
-      }
-    }
-    try {
-      if (syncedCount > 0) await persist({ ...data, exercises: nextExercises });
-      const failText = failures.length ? ` ${failures.length} link(s) no se pudieron leer; usa Excel o pegado rapido para esos casos.` : "";
-      setMsg({
-        ok: syncedCount > 0,
-        t: syncedCount > 0
-          ? `Sincronizados ${syncedCount} ejercicio(s): ${addedTotal} nuevo(s), ${updatedTotal} actualizado(s).${failText}`
-          : "Wordwall bloqueo la lectura de los links guardados. Abre cada link, exporta Excel o pega el detallado.",
-      });
-    } finally {
-      setSyncBusy(false);
-    }
-  };
 
   return (
     <div className="wrap">
       <div className="admin-head">
         <div className="admin-head-l">
-          <span className="admin-badge">âš™ ADMIN</span>
+          <span className="admin-badge">⚙ ADMIN</span>
           <div>
             <div className="admin-title">Panel de resultados</div>
-            <div className="admin-sub">Sube ejercicios, edÃ­talos y gestiona los nombres del equipo</div>
+            <div className="admin-sub">Sube ejercicios, edítalos y gestiona los nombres del equipo</div>
           </div>
         </div>
-        <button className="btn btn--ghost btn--sm" onClick={onExit}>â† Vista pÃºblica</button>
+        <button className="btn btn--ghost btn--sm" onClick={onExit}>← Vista pública</button>
       </div>
 
       <div className="tabs">
         <button className={`tab ${tab === "roles" ? "tab--on" : ""}`} onClick={() => setTab("roles")}>Juego de roles</button>
-        {[["dashboard", "ðŸ“Š Dashboard"], ["ruta", "ðŸŸï¸ Ruta Formativa"], ["asistencia", "âœ… Asistencia"], ["preguntas", `ðŸ’¬ Preguntas (${(data.questions || []).filter((q) => q.status !== "archived").length})`], ["subir", "â¬† Subir resultados"], ["ejercicios", `ðŸ“‹ Ejercicios (${data.exercises.length})`], ["usuarios", `ðŸ‘¥ Usuarios (${(data.users || []).length})`], ["participantes", "ðŸƒ Participantes"], ["alias", "ðŸ‘¤ Nombres y alias"], ["pin", "ðŸ”’ PIN"]].map(([k, t]) => (
+        {[["dashboard", "📊 Dashboard"], ["ruta", "🏟️ Ruta Formativa"], ["asistencia", "✅ Asistencia"], ["preguntas", `💬 Preguntas (${(data.questions || []).filter((q) => q.status !== "archived").length})`], ["subir", "⬆ Subir resultados"], ["ejercicios", `📋 Ejercicios (${data.exercises.length})`], ["usuarios", `👥 Usuarios (${(data.users || []).length})`], ["participantes", "🏃 Participantes"], ["alias", "👤 Nombres y alias"], ["pin", "🔒 PIN"]].map(([k, t]) => (
           <button key={k} className={`tab ${tab === k ? "tab--on" : ""}`} onClick={() => setTab(k)}>{t}</button>
         ))}
       </div>
@@ -3857,38 +3788,38 @@ function AdminPanel({ data, setData, onExit }) {
             <>
               <div className="upload-grid">
                 <div className="dropzone" onClick={() => fileRef.current?.click()} role="button" tabIndex={0} onKeyDown={(e) => e.key === "Enter" && fileRef.current?.click()}>
-                  <div className="opt-badge opt-badge--a">OPCIÃ“N A Â· RECOMENDADA</div>
-                  <div className="dropzone-icon">ðŸ“Š</div>
+                  <div className="opt-badge opt-badge--a">OPCIÓN A · RECOMENDADA</div>
+                  <div className="dropzone-icon">📊</div>
                   <div className="dropzone-title">Sube el Excel de Wordwall</div>
-                  <div className="dropzone-sub">Trae el detalle por pregunta. Luego podrÃ¡s pegar el detallado si necesitas completar datos.</div>
+                  <div className="dropzone-sub">Trae el detalle por pregunta. Luego podrás pegar el detallado si necesitas completar datos.</div>
                   <span className="dropzone-cta">Elegir archivo .xlsx</span>
                   <input ref={fileRef} type="file" accept=".xlsx,.xls" style={{ display: "none" }} onChange={(e) => e.target.files[0] && onFile(e.target.files[0])} />
                 </div>
                 <div className="dropzone dropzone--alt" onClick={startFromPaste} role="button" tabIndex={0} onKeyDown={(e) => e.key === "Enter" && startFromPaste()}>
-                  <div className="opt-badge opt-badge--b">OPCIÃ“N B</div>
-                  <div className="dropzone-icon">ðŸ“‹</div>
+                  <div className="opt-badge opt-badge--b">OPCIÓN B</div>
+                  <div className="dropzone-icon">📋</div>
                   <div className="dropzone-title">Pega solo el detallado</div>
                   <div className="dropzone-sub">Crea el ejercicio pegando la tabla de Wordwall, sin descargar el Excel.</div>
                   <span className="dropzone-cta dropzone-cta--alt">Pegar detallado</span>
                 </div>
               </div>
               <div className="upload-hint">
-                ðŸ’¡ Â¿El ejercicio ya existe y solo quieres sumar gente nueva? Sube el Excel igual: al reconocer el tÃ­tulo, te ofrecerÃ¡ <b>fusionar</b> con el existente.
+                💡 ¿El ejercicio ya existe y solo quieres sumar gente nueva? Sube el Excel igual: al reconocer el título, te ofrecerá <b>fusionar</b> con el existente.
               </div>
             </>
           ) : (
             <>
               <div className="card">
-                <div className="step"><span className="step-n">1</span> TÃ­tulo del ejercicio</div>
-                <input className="inp" value={titleEdit} onChange={(e) => setTitleEdit(e.target.value)} placeholder="Ej. Refuerzo Segunda SesiÃ³n" />
+                <div className="step"><span className="step-n">1</span> Título del ejercicio</div>
+                <input className="inp" value={titleEdit} onChange={(e) => setTitleEdit(e.target.value)} placeholder="Ej. Refuerzo Segunda Sesión" />
                 {!parsed.fromPaste && (
                   <div className="dim" style={{ fontSize: 13, marginTop: 8 }}>
-                    {parsed.students.length} participantes Â· {parsed.questions.length} preguntas detectadas en el Excel
+                    {parsed.students.length} participantes · {parsed.questions.length} preguntas detectadas en el Excel
                   </div>
                 )}
                 {mergeMode === "merge" && mergeTarget && (
                   <div className="detect-banner">
-                    ðŸ’¡ Ya existe un ejercicio llamado <b>â€œ{data.exercises.find((e) => e.id === mergeTarget)?.title}â€</b>. Abajo puedes fusionar los resultados o crear uno nuevo.
+                    💡 Ya existe un ejercicio llamado <b>“{data.exercises.find((e) => e.id === mergeTarget)?.title}”</b>. Abajo puedes fusionar los resultados o crear uno nuevo.
                   </div>
                 )}
               </div>
@@ -3903,14 +3834,14 @@ function AdminPanel({ data, setData, onExit }) {
                   value={lbText}
                   onChange={(e) => setLbText(e.target.value)}
                   rows={6}
-                  placeholder={"Copia la tabla desde Wordwall, con este formato:\nAlumno\tEnviado\tPuntuaciÃ³n\tCorrecto\tIncorrecto\nEly\t19:32 - 27 jun. 2026\t1036\t7\t0"}
+                  placeholder={"Copia la tabla desde Wordwall, con este formato:\nAlumno\tEnviado\tPuntuación\tCorrecto\tIncorrecto\nEly\t19:32 - 27 jun. 2026\t1036\t7\t0"}
                 />
                 {lbParsed.length > 0 && (
                   <div className="preview">
                     {(parsed.fromPaste ? lbParsed.map((e) => ({ ...e, matched: true })) : lbMatch).map((e, i) => (
                       <div key={i} className={e.matched ? "pv-ok" : "pv-bad"}>
-                        {e.name} Â· {e.score != null ? `${e.score} pts` : "sin puntuaciÃ³n"} Â· {e.correct}âœ” {e.incorrect}âœ–{" "}
-                        {parsed.fromPaste ? "" : e.matched ? "âœ” coincide con el Excel" : "âœ– no coincide con ningÃºn nombre del Excel"}
+                        {e.name} · {e.score != null ? `${e.score} pts` : "sin puntuación"} · {e.correct}✔ {e.incorrect}✖{" "}
+                        {parsed.fromPaste ? "" : e.matched ? "✔ coincide con el Excel" : "✖ no coincide con ningún nombre del Excel"}
                       </div>
                     ))}
                     {!parsed.fromPaste && <div className="dim" style={{ marginTop: 4 }}>Los nombres deben escribirse igual que en el Excel para coincidir.</div>}
@@ -3920,14 +3851,14 @@ function AdminPanel({ data, setData, onExit }) {
 
               {Object.keys(nameMap).length > 0 && (
                 <div className="card">
-                  <div className="step"><span className="step-n">3</span> Nombres nuevos â€” asÃ³cialos para que el consolidado no duplique personas</div>
+                  <div className="step"><span className="step-n">3</span> Nombres nuevos — asócialos para que el consolidado no duplique personas</div>
                   <div className="stack" style={{ gap: 8 }}>
                     {Object.keys(nameMap).map((k) => {
                       const raw = (parsed.fromPaste ? lbParsed.find((e) => norm(e.name) === k)?.name : parsed.students.find((s) => norm(s.raw) === k)?.raw) || k;
                       return (
                         <div key={k} className="alias-row">
                           <div className="alias-raw">{raw}</div>
-                          <span className="dim">â†’</span>
+                          <span className="dim">→</span>
                           <select className="inp inp--select" value={nameMap[k]} onChange={(e) => setNameMap({ ...nameMap, [k]: e.target.value })}>
                             <option value="__new__">Registrar como persona nueva: "{String(raw).trim()}"</option>
                             {canonicals.map((c) => (
@@ -3944,24 +3875,24 @@ function AdminPanel({ data, setData, onExit }) {
               <div className={`card destino ${mergeMode === "merge" ? "destino--merge" : ""}`}>
                 <div className="step">
                   <span className="step-n">{Object.keys(nameMap).length > 0 ? "4" : "3"}</span>
-                  Â¿Guardar como nuevo o actualizar uno existente?
+                  ¿Guardar como nuevo o actualizar uno existente?
                 </div>
                 {data.exercises.length === 0 ? (
-                  <div className="dim" style={{ fontSize: 13 }}>Se crearÃ¡ el primer ejercicio.</div>
+                  <div className="dim" style={{ fontSize: 13 }}>Se creará el primer ejercicio.</div>
                 ) : (
                   <>
                     <div className="destino-opts">
                       <label className={`radio-card ${mergeMode === "new" ? "radio-card--on" : ""}`}>
                         <input type="radio" checked={mergeMode === "new"} onChange={() => setMergeMode("new")} />
                         <div>
-                          <div className="radio-title">ðŸ†• Crear ejercicio nuevo</div>
+                          <div className="radio-title">🆕 Crear ejercicio nuevo</div>
                           <div className="radio-sub">Aparece como una entrada aparte en la tabla.</div>
                         </div>
                       </label>
                       <label className={`radio-card ${mergeMode === "merge" ? "radio-card--on" : ""}`}>
                         <input type="radio" checked={mergeMode === "merge"} onChange={() => setMergeMode("merge")} />
                         <div>
-                          <div className="radio-title">ðŸ”„ Fusionar con uno existente</div>
+                          <div className="radio-title">🔄 Fusionar con uno existente</div>
                           <div className="radio-sub">Agrega los participantes nuevos y actualiza los que mejoraron.</div>
                         </div>
                       </label>
@@ -3970,7 +3901,7 @@ function AdminPanel({ data, setData, onExit }) {
                       <div style={{ marginTop: 12 }}>
                         <label className="lbl">Ejercicio a actualizar</label>
                         <select className="inp inp--select" value={mergeTarget} onChange={(e) => setMergeTarget(e.target.value)}>
-                          <option value="">â€” Elige el ejercicio â€”</option>
+                          <option value="">— Elige el ejercicio —</option>
                           {data.exercises.map((e) => (
                             <option key={e.id} value={e.id}>
                               {e.title} ({e.students.length} participantes)
@@ -3990,7 +3921,7 @@ function AdminPanel({ data, setData, onExit }) {
                               <span className="mp-pill mp-keep">{t.students.length} ya registrado(s)</span>
                               {nuevos.length > 0 && (
                                 <div className="dim" style={{ fontSize: 12.5, marginTop: 6, width: "100%" }}>
-                                  Se agregarÃ¡n: {nuevos.map((s) => s.raw).join(", ")}
+                                  Se agregarán: {nuevos.map((s) => s.raw).join(", ")}
                                 </div>
                               )}
                             </div>
@@ -4019,36 +3950,24 @@ function AdminPanel({ data, setData, onExit }) {
 
       {tab === "ejercicios" && (
         <div className="stack" style={{ gap: 10 }}>
-          <div className="card sync-card">
-            <div>
-              <div className="ex-title">Sincronizar links de Wordwall</div>
-              <div className="dim" style={{ fontSize: 13 }}>
-                Intenta actualizar los ejercicios que tienen link de resultados guardado. Si Wordwall bloquea la lectura, usa Excel o pegado rapido.
-              </div>
-            </div>
-            <button className="btn btn--teal-o btn--sm" onClick={syncAllResultLinks} disabled={busy || syncBusy || exercisesWithResultLinks.length === 0}>
-              {syncBusy ? "Intentando..." : `Actualizar ${exercisesWithResultLinks.length} link(s)`}
-            </button>
-          </div>
-          {data.exercises.length === 0 && <div className="empty">AÃºn no hay ejercicios. Sube el primero desde "Subir resultados".</div>}
+          {data.exercises.length === 0 && <div className="empty">Aún no hay ejercicios. Sube el primero desde "Subir resultados".</div>}
           {data.exercises.map((ex) => (
             <div key={ex.id} className="card ex-card">
               <div>
                 <div className="ex-title">{ex.title}</div>
                 <div className="dim" style={{ fontSize: 13 }}>
-                  {ex.students.length} participantes Â· {(ex.questions || []).length} preguntas Â· aciertos con desempate Wordwall Â· subido {new Date(ex.date).toLocaleDateString("es-PE")}
+                  {ex.students.length} participantes · {(ex.questions || []).length} preguntas · aciertos con desempate Wordwall · subido {new Date(ex.date).toLocaleDateString("es-PE")}
                 </div>
               </div>
               {confirmDelEx === ex.id ? (
                 <div className="ex-actions">
-                  <span className="dim" style={{ fontSize: 13, alignSelf: "center" }}>Â¿Seguro?</span>
-                  <button className="btn btn--danger-o btn--sm" onClick={() => delExercise(ex.id)}>SÃ­, eliminar</button>
+                  <span className="dim" style={{ fontSize: 13, alignSelf: "center" }}>¿Seguro?</span>
+                  <button className="btn btn--danger-o btn--sm" onClick={() => delExercise(ex.id)}>Sí, eliminar</button>
                   <button className="btn btn--ghost btn--sm" onClick={() => setConfirmDelEx(null)}>Cancelar</button>
                 </div>
               ) : (
                 <div className="ex-actions">
-                  {ex.resultsUrl && <a className="btn btn--ghost btn--sm" href={ex.resultsUrl} target="_blank" rel="noreferrer">Abrir resultados</a>}
-                  <button className="btn btn--teal-o btn--sm" onClick={() => setEditing(ex.id)}>âœŽ Editar</button>
+                  <button className="btn btn--teal-o btn--sm" onClick={() => setEditing(ex.id)}>✎ Editar</button>
                   <button className="btn btn--danger-o btn--sm" onClick={() => setConfirmDelEx(ex.id)}>Eliminar</button>
                 </div>
               )}
@@ -4062,11 +3981,11 @@ function AdminPanel({ data, setData, onExit }) {
       {tab === "participantes" && (
         <div className="stack" style={{ gap: 10 }}>
           <div className="dim" style={{ fontSize: 13 }}>
-            AquÃ­ puedes <b>excluir</b> a alguien del podio y del ranking sin borrar sus datos â€” Ãºtil para ti,
+            Aquí puedes <b>excluir</b> a alguien del podio y del ranking sin borrar sus datos — útil para ti,
             tu partner o expositores que jugaron solo para probar. Los excluidos no aparecen en ninguna tabla,
             pero puedes volver a incluirlos cuando quieras.
           </div>
-          {canonicals.length === 0 && <div className="empty">TodavÃ­a no hay participantes. Sube un ejercicio primero.</div>}
+          {canonicals.length === 0 && <div className="empty">Todavía no hay participantes. Sube un ejercicio primero.</div>}
           {canonicals.map((canon) => {
             const on = excludedSet.some((e) => norm(e) === norm(canon));
             const games = data.exercises.filter((ex) => ex.students.some((s) => canonicalOf(s.raw, data.aliases) === canon)).length;
@@ -4084,7 +4003,7 @@ function AdminPanel({ data, setData, onExit }) {
                   onClick={() => toggleExcluded(canon)}
                   disabled={busy}
                 >
-                  {on ? "â†© Incluir en el podio" : "ðŸš« Excluir del podio"}
+                  {on ? "↩ Incluir en el podio" : "🚫 Excluir del podio"}
                 </button>
               </div>
             );
@@ -4095,13 +4014,13 @@ function AdminPanel({ data, setData, onExit }) {
       {tab === "alias" && (
         <div className="stack" style={{ gap: 8 }}>
           <div className="dim" style={{ fontSize: 13, marginBottom: 4 }}>
-            Cada nombre tal como se escribiÃ³ en Wordwall (izquierda) apunta a la persona real (derecha). Edita el nombre real y guarda para corregir duplicados.
+            Cada nombre tal como se escribió en Wordwall (izquierda) apunta a la persona real (derecha). Edita el nombre real y guarda para corregir duplicados.
           </div>
-          {Object.keys(data.aliases).length === 0 && <div className="empty">TodavÃ­a no hay nombres registrados.</div>}
+          {Object.keys(data.aliases).length === 0 && <div className="empty">Todavía no hay nombres registrados.</div>}
           {Object.entries(data.aliases).map(([k, v]) => (
             <div key={k} className="alias-row">
               <div className="alias-raw dim">{k}</div>
-              <span className="dim">â†’</span>
+              <span className="dim">→</span>
               <input className="inp" style={{ width: 240 }} value={aliasCanon[k] ?? v} onChange={(e) => setAliasCanon({ ...aliasCanon, [k]: e.target.value })} />
               {(aliasCanon[k] ?? v) !== v && (
                 <button className="btn btn--teal btn--sm" onClick={() => saveAlias(k)} disabled={busy}>Guardar</button>
@@ -4113,11 +4032,11 @@ function AdminPanel({ data, setData, onExit }) {
 
       {tab === "pin" && (
         <div className="card" style={{ maxWidth: 420 }}>
-          <div className="step" style={{ marginBottom: 8 }}>Cambiar PIN de administraciÃ³n</div>
-          <input className="inp" value={pin1} onChange={(e) => setPin1(e.target.value)} placeholder="Nuevo PIN (mÃ­nimo 4 caracteres)" />
+          <div className="step" style={{ marginBottom: 8 }}>Cambiar PIN de administración</div>
+          <input className="inp" value={pin1} onChange={(e) => setPin1(e.target.value)} placeholder="Nuevo PIN (mínimo 4 caracteres)" />
           <button className="btn btn--gold" style={{ marginTop: 12 }} onClick={changePin} disabled={busy}>Actualizar PIN</button>
           <div className="dim" style={{ fontSize: 12, marginTop: 10 }}>
-            Nota: esta protecciÃ³n evita cambios accidentales, pero los datos del podio son visibles para cualquiera que tenga el enlace.
+            Nota: esta protección evita cambios accidentales, pero los datos del podio son visibles para cualquiera que tenga el enlace.
           </div>
         </div>
       )}
@@ -4157,7 +4076,7 @@ function PinGate({ data, setData, onOk, onCancel }) {
   };
   return (
     <div className="card pin-card">
-      <div className="pin-lock">ðŸ”</div>
+      <div className="pin-lock">🔐</div>
       <div className="disp pin-title">{creating ? "CREA TU PIN DE ADMIN" : "ACCESO ADMIN"}</div>
       {creating && (
         <div className="dim" style={{ fontSize: 13, marginBottom: 12 }}>
@@ -4184,7 +4103,7 @@ function PinGate({ data, setData, onOk, onCancel }) {
 
 /* ================= Ruta Formativa (cancha) ================= */
 function ResourceButton({ r, onOpen }) {
-  const icon = r.type === "game" ? "ðŸŽ®" : "â–¶ï¸";
+  const icon = r.type === "game" ? "🎮" : "▶️";
   const cls = r.type === "game" ? "res-btn res-btn--game" : "res-btn res-btn--video";
   if (r.type === "game" && r.url) {
     return (
@@ -4192,7 +4111,7 @@ function ResourceButton({ r, onOpen }) {
         <span className="res-ic">{icon}</span>
         <span className="res-txt">
           <span className="res-label">{r.label || "Juego Wordwall"}</span>
-          {r.slide ? <span className="res-slide">LÃ¡mina {r.slide}</span> : null}
+          {r.slide ? <span className="res-slide">Lámina {r.slide}</span> : null}
         </span>
       </a>
     );
@@ -4202,7 +4121,7 @@ function ResourceButton({ r, onOpen }) {
       <span className="res-ic">{icon}</span>
       <span className="res-txt">
         <span className="res-label">{r.label || (r.type === "game" ? "Juego Wordwall" : "Video")}</span>
-        {r.slide ? <span className="res-slide">LÃ¡mina {r.slide}</span> : null}
+        {r.slide ? <span className="res-slide">Lámina {r.slide}</span> : null}
       </span>
     </button>
   );
@@ -4219,8 +4138,8 @@ function RouteField({ data, muted, sessionUser, onToggleBlockProgress, onOpenBlo
   if (!blocks.length) {
     return (
       <div className="empty" style={{ padding: "70px 20px" }}>
-        <div style={{ fontSize: 42 }}>âš½</div>
-        <div style={{ marginTop: 10 }}>La ruta formativa aÃºn no tiene bloques.<br />Entra al panel de administraciÃ³n para armarla.</div>
+        <div style={{ fontSize: 42 }}>⚽</div>
+        <div style={{ marginTop: 10 }}>La ruta formativa aún no tiene bloques.<br />Entra al panel de administración para armarla.</div>
       </div>
     );
   }
@@ -4228,17 +4147,17 @@ function RouteField({ data, muted, sessionUser, onToggleBlockProgress, onOpenBlo
   return (
     <div className="route">
       <div className="route-intro">
-        <span className="route-kick">âš½</span>
+        <span className="route-kick">⚽</span>
         <div>
-          <div className="route-title">{route.title || "Ruta de PreparaciÃ³n"}</div>
-          <div className="route-sub">Avanza bloque por bloque Â· el Ãºltimo es <b>Â¡GOL!</b></div>
+          <div className="route-title">{route.title || "Ruta de Preparación"}</div>
+          <div className="route-sub">Avanza bloque por bloque · el último es <b>¡GOL!</b></div>
         </div>
       </div>
 
       <div className="route-progress">
         <div className="route-progress-head">
           <span>Tu avance</span>
-          <b>{routeStats.completed}/{routeStats.total} bloques Â· {routeStats.percent}%</b>
+          <b>{routeStats.completed}/{routeStats.total} bloques · {routeStats.percent}%</b>
         </div>
         <span className="route-progress-bar"><i style={{ width: `${routeStats.percent}%` }} /></span>
       </div>
@@ -4254,7 +4173,7 @@ function RouteField({ data, muted, sessionUser, onToggleBlockProgress, onOpenBlo
           return (
             <div key={b.id} className={`station station--${side} ${isLast ? "station--goal" : ""} ${locked ? "station--locked" : ""} ${done ? "station--done" : ""}`}>
               <div className="station-node">
-                <span className="station-num">{locked ? "ðŸ”’" : done ? "âœ“" : isLast ? "ðŸ¥…" : i + 1}</span>
+                <span className="station-num">{locked ? "🔒" : done ? "✓" : isLast ? "🥅" : i + 1}</span>
               </div>
               <button
                 className="station-card"
@@ -4267,23 +4186,23 @@ function RouteField({ data, muted, sessionUser, onToggleBlockProgress, onOpenBlo
                 aria-disabled={locked}
               >
                 <div className="station-head">
-                  <span className="station-tag">{locked ? "ðŸ”’ BLOQUEADO" : isLast ? "Â¡GOL! Â· BLOQUE FINAL" : `BLOQUE ${i + 1}`}</span>
+                  <span className="station-tag">{locked ? "🔒 BLOQUEADO" : isLast ? "¡GOL! · BLOQUE FINAL" : `BLOQUE ${i + 1}`}</span>
                   {!locked && (b.pptUrl || resCount > 0) && (
                     <span className="station-meta">
-                      {b.pptUrl ? "ðŸ“Š" : ""}{resCount ? ` ${resCount} recurso${resCount === 1 ? "" : "s"}` : ""}
+                      {b.pptUrl ? "📊" : ""}{resCount ? ` ${resCount} recurso${resCount === 1 ? "" : "s"}` : ""}
                     </span>
                   )}
                 </div>
                 <div className="station-title">{b.title || `Bloque ${i + 1}`}</div>
                 {b.subtitle && !locked ? <div className="station-desc">{b.subtitle}</div> : null}
-                <span className="station-cta">{locked ? (adminLocked ? "Disponible pronto ðŸ”’" : "Completa el bloque anterior ðŸ”’") : done ? "Completado âœ“" : "Abrir bloque â†’"}</span>
+                <span className="station-cta">{locked ? (adminLocked ? "Disponible pronto 🔒" : "Completa el bloque anterior 🔒") : done ? "Completado ✓" : "Abrir bloque →"}</span>
               </button>
             </div>
           );
         })}
         <div className="goal-net" aria-hidden>
           <div className="goal-post" />
-          <div className="goal-label">âš½ Â¡METISTE GOL! Completaste la ruta ðŸŽ‰</div>
+          <div className="goal-label">⚽ ¡METISTE GOL! Completaste la ruta 🎉</div>
         </div>
       </div>
 
@@ -4314,17 +4233,17 @@ function PptFrame({ embedUrl, originalUrl }) {
   return (
     <div className="ppt-block">
       <div className="ppt-frame">
-        <iframe title="PresentaciÃ³n" src={embedUrl} allowFullScreen frameBorder="0" onLoad={() => { setLoaded(true); setFailed(false); }} />
+        <iframe title="Presentación" src={embedUrl} allowFullScreen frameBorder="0" onLoad={() => { setLoaded(true); setFailed(false); }} />
         {failed && (
           <div className="viewer-fallback">
-            <div className="vf-ic">ðŸ“Š</div>
-            <div className="vf-title">La presentaciÃ³n se abre en pestaÃ±a nueva</div>
-            <div className="vf-sub">No se pudo mostrar aquÃ­ dentro. TÃ³cala para verla completa:</div>
-            <a className="btn btn--gold btn--lg" href={originalUrl} target="_blank" rel="noreferrer">Abrir presentaciÃ³n â†—</a>
+            <div className="vf-ic">📊</div>
+            <div className="vf-title">La presentación se abre en pestaña nueva</div>
+            <div className="vf-sub">No se pudo mostrar aquí dentro. Tócala para verla completa:</div>
+            <a className="btn btn--gold btn--lg" href={originalUrl} target="_blank" rel="noreferrer">Abrir presentación ↗</a>
           </div>
         )}
       </div>
-      <a className="btn btn--gold ppt-open-btn" href={originalUrl} target="_blank" rel="noreferrer">ðŸ“Š Abrir presentaciÃ³n en pestaÃ±a nueva â†—</a>
+      <a className="btn btn--gold ppt-open-btn" href={originalUrl} target="_blank" rel="noreferrer">📊 Abrir presentación en pestaña nueva ↗</a>
     </div>
   );
 }
@@ -4339,7 +4258,7 @@ function BlockAudio({ url, percent, completed, onAudioProgress }) {
     <div className={`audio-card ${completed ? "audio-card--done" : ""}`}>
       <div className="audio-head">
         <div>
-          <div className="audio-title">Audio de acompaÃ±amiento</div>
+          <div className="audio-title">Audio de acompañamiento</div>
           <div className="dim">{completed ? "Escuchado" : `Se marca escuchado al llegar al ${AUDIO_COMPLETE_PCT}%`}</div>
         </div>
         <b>{Math.max(localPercent, percent || 0)}%</b>
@@ -4380,17 +4299,17 @@ function BlockModal({ block, status, progressBusy, onToggleComplete, onAudioProg
       <div className="modal modal--wide" onClick={(e) => e.stopPropagation()}>
         <div className="modal-head">
           <div className="modal-title-row">
-            <span className="block-badge">âš½</span>
+            <span className="block-badge">⚽</span>
             <div className="modal-title">{block.title || "Bloque"}</div>
           </div>
-          <button className="btn btn--ghost btn--sm" onClick={onClose}>Cerrar âœ•</button>
+          <button className="btn btn--ghost btn--sm" onClick={onClose}>Cerrar ✕</button>
         </div>
         {block.subtitle ? <div className="dim" style={{ marginBottom: 14 }}>{block.subtitle}</div> : null}
 
         {pptEmbed ? (
           <PptFrame embedUrl={pptEmbed} originalUrl={block.pptUrl} />
         ) : (
-          <div className="ppt-empty">Este bloque no tiene presentaciÃ³n asignada.</div>
+          <div className="ppt-empty">Este bloque no tiene presentación asignada.</div>
         )}
 
         {block.audioUrl && (
@@ -4428,7 +4347,7 @@ function BlockModal({ block, status, progressBusy, onToggleComplete, onAudioProg
                 ? "Este bloque ya cuenta en tu ruta formativa."
                 : status.requirementsMet
                   ? "Ya cumples los requisitos. Registra el cierre para desbloquear el siguiente bloque."
-                  : `AÃºn falta: ${status.missing.join(", ")}`}
+                  : `Aún falta: ${status.missing.join(", ")}`}
             </div>
           </div>
           <button
@@ -4442,7 +4361,7 @@ function BlockModal({ block, status, progressBusy, onToggleComplete, onAudioProg
 
         {games.length > 0 && (
           <div className="res-group">
-            <div className="res-group-title">ðŸŽ® Juegos de Wordwall</div>
+            <div className="res-group-title">🎮 Juegos de Wordwall</div>
             <div className="res-list">
               {games.map((r) => <ResourceButton key={r.id} r={r} onOpen={onOpenResource} />)}
             </div>
@@ -4450,7 +4369,7 @@ function BlockModal({ block, status, progressBusy, onToggleComplete, onAudioProg
         )}
         {videos.length > 0 && (
           <div className="res-group">
-            <div className="res-group-title">â–¶ï¸ Videos</div>
+            <div className="res-group-title">▶️ Videos</div>
             <div className="res-list">
               {videos.map((r) => <ResourceButton key={r.id} r={r} onOpen={onOpenResource} />)}
             </div>
@@ -4472,12 +4391,12 @@ function ContentViewer({ resource, onClose }) {
       <div className="viewer" onClick={(e) => e.stopPropagation()}>
         <div className="viewer-head">
           <div className="viewer-title">
-            {isVideo ? "â–¶ï¸" : "ðŸŽ®"} {label}
-            {resource.slide ? <span className="dim"> Â· LÃ¡mina {resource.slide}</span> : null}
+            {isVideo ? "▶️" : "🎮"} {label}
+            {resource.slide ? <span className="dim"> · Lámina {resource.slide}</span> : null}
           </div>
           <div className="viewer-actions">
-            <a className="btn btn--gold btn--sm" href={openUrl} target="_blank" rel="noreferrer">Abrir en pestaÃ±a â†—</a>
-            <button className="btn btn--ghost btn--sm" onClick={onClose}>Cerrar âœ•</button>
+            <a className="btn btn--gold btn--sm" href={openUrl} target="_blank" rel="noreferrer">Abrir en pestaña ↗</a>
+            <button className="btn btn--ghost btn--sm" onClick={onClose}>Cerrar ✕</button>
           </div>
         </div>
         <div className="viewer-frame">
@@ -4490,10 +4409,10 @@ function ContentViewer({ resource, onClose }) {
           />
         </div>
         <a className="btn btn--gold viewer-open-btn" href={openUrl} target="_blank" rel="noreferrer">
-          {isVideo ? "â–¶ï¸" : "ðŸŽ®"} Abrir {label} en pestaÃ±a nueva â†—
+          {isVideo ? "▶️" : "🎮"} Abrir {label} en pestaña nueva ↗
         </a>
         <div className="viewer-note dim">
-          ðŸ’¡ Si no ves el contenido arriba, usa el botÃ³n dorado. Algunos sitios (como Wordwall) no permiten mostrarse dentro de otras pÃ¡ginas por seguridad.
+          💡 Si no ves el contenido arriba, usa el botón dorado. Algunos sitios (como Wordwall) no permiten mostrarse dentro de otras páginas por seguridad.
         </div>
       </div>
     </div>
@@ -4522,7 +4441,7 @@ function RoleAudioPlayer({ resource, roleKey, onUse }) {
     return (
       <div className="role-audio role-audio--error">
         <div className="role-audio-title">Audio sin archivo</div>
-        <div className="role-audio-help">El administrador debe subir un audio o pegar un link vÃ¡lido.</div>
+        <div className="role-audio-help">El administrador debe subir un audio o pegar un link válido.</div>
       </div>
     );
   }
@@ -4559,7 +4478,7 @@ function RoleAudioPlayer({ resource, roleKey, onUse }) {
         }}
         onError={() => {
           setState("error");
-          setError("El archivo no cargÃ³. Prueba abrirlo en otra pestaÃ±a o vuelve a subirlo desde administraciÃ³n.");
+          setError("El archivo no cargó. Prueba abrirlo en otra pestaña o vuelve a subirlo desde administración.");
         }}
       />
       <span className="route-progress-bar"><i style={{ width: `${progress}%` }} /></span>
@@ -4635,7 +4554,7 @@ function RoleplayHub({ data, setData, sessionUser }) {
           userName: sessionUser.name,
           assignedRoleId: "asesor",
           assignedRole: "Asesor",
-          guide: "Facilita la prÃ¡ctica y acompaÃ±a a quienes interpretan los casos.",
+          guide: "Facilita la práctica y acompaña a quienes interpretan los casos.",
           isFacilitator: true,
           joinedAt: now,
         }],
@@ -4643,9 +4562,9 @@ function RoleplayHub({ data, setData, sessionUser }) {
       setData((prev) => upsertLocalRoleplaySession(prev, saved));
       setActiveSessionId(saved.id);
       setSelectedRole("asesor");
-      setMsg(`SesiÃ³n creada. Comparte el cÃ³digo ${saved.code}.`);
+      setMsg(`Sesión creada. Comparte el código ${saved.code}.`);
     } catch {
-      setMsg("No se pudo crear la sesiÃ³n. Revisa que la tabla roleplay_sessions exista en Supabase.");
+      setMsg("No se pudo crear la sesión. Revisa que la tabla roleplay_sessions exista en Supabase.");
     } finally {
       setBusy(false);
     }
@@ -4659,11 +4578,11 @@ function RoleplayHub({ data, setData, sessionUser }) {
       const rows = await sbFetch(`roleplay_sessions?code=eq.${encodeURIComponent(code)}&select=*`);
       const found = mapRoleplaySessions(rows)[0];
       if (!found) {
-        setMsg("No encontramos una sesiÃ³n con ese cÃ³digo.");
+        setMsg("No encontramos una sesión con ese código.");
         return;
       }
       if (found.status === "closed") {
-        setMsg("Esa sesiÃ³n ya estÃ¡ cerrada.");
+        setMsg("Esa sesión ya está cerrada.");
         return;
       }
       let next = found;
@@ -4687,16 +4606,16 @@ function RoleplayHub({ data, setData, sessionUser }) {
       setActiveSessionId(next.id);
       setSelectedRole("asesor");
       setJoinCode("");
-      setMsg("Te uniste a la sesiÃ³n. Revisa el rol que te tocÃ³.");
+      setMsg("Te uniste a la sesión. Revisa el rol que te tocó.");
     } catch {
-      setMsg("No se pudo unir a la sesiÃ³n. Revisa tu conexiÃ³n e intÃ©ntalo de nuevo.");
+      setMsg("No se pudo unir a la sesión. Revisa tu conexión e inténtalo de nuevo.");
     } finally {
       setBusy(false);
     }
   };
   const closeSession = async (session) => {
     if (session.ownerUserId !== sessionUser.id) {
-      setMsg("Solo quien creÃ³ la prÃ¡ctica puede finalizarla.");
+      setMsg("Solo quien creó la práctica puede finalizarla.");
       return;
     }
     setBusy(true);
@@ -4706,16 +4625,16 @@ function RoleplayHub({ data, setData, sessionUser }) {
       setData((prev) => upsertLocalRoleplaySession(prev, saved));
       setHiddenSessionIds((prev) => prev.includes(saved.id) ? prev : [...prev, saved.id]);
       setActiveSessionId("");
-      setMsg("SesiÃ³n cerrada.");
+      setMsg("Sesión cerrada.");
     } catch {
-      setMsg("No se pudo cerrar la sesiÃ³n.");
+      setMsg("No se pudo cerrar la sesión.");
     } finally {
       setBusy(false);
     }
   };
   const renderResources = (roleKey) => {
     const resources = roleplay[roleKey]?.resources || [];
-    if (!resources.length) return <div className="empty empty--compact">TodavÃ­a no hay recursos asignados para este rol.</div>;
+    if (!resources.length) return <div className="empty empty--compact">Todavía no hay recursos asignados para este rol.</div>;
     return (
       <div className="role-resource-cards">
         {resources.map((r) => {
@@ -4753,12 +4672,12 @@ function RoleplayHub({ data, setData, sessionUser }) {
     <div className="roleplay-hub">
       <div className="card roleplay-hero">
         <div>
-          <div className="dash-eyebrow">PreparaciÃ³n prÃ¡ctica</div>
+          <div className="dash-eyebrow">Preparación práctica</div>
           <div className="dash-title">Juego de roles</div>
           <div className="dim">Elige tu rol para practicar con sesiones, juegos o materiales asignados por el equipo.</div>
         </div>
         <div className="join-box">
-          <input className="inp inp--sm" value={joinCode} onChange={(e) => setJoinCode(e.target.value.toUpperCase())} onKeyDown={(e) => e.key === "Enter" && joinSession()} placeholder="CÃ³digo de sesiÃ³n" />
+          <input className="inp inp--sm" value={joinCode} onChange={(e) => setJoinCode(e.target.value.toUpperCase())} onKeyDown={(e) => e.key === "Enter" && joinSession()} placeholder="Código de sesión" />
           <button className="btn btn--teal-o btn--sm" onClick={joinSession} disabled={busy || !joinCode.trim()}>Unirme</button>
         </div>
       </div>
@@ -4778,15 +4697,15 @@ function RoleplayHub({ data, setData, sessionUser }) {
           <div className="card role-session-panel">
             <div className="dash-panel-head">
               <div>
-                <div className="dash-panel-title">SesiÃ³n de prÃ¡ctica</div>
-                <div className="dim">Crea una sesiÃ³n y comparte el cÃ³digo. TÃº quedas como asesor; quienes entren reciben un caso del manual.</div>
+                <div className="dash-panel-title">Sesión de práctica</div>
+                <div className="dim">Crea una sesión y comparte el código. Tú quedas como asesor; quienes entren reciben un caso del manual.</div>
               </div>
-              <button className="btn btn--gold btn--sm" onClick={createSession} disabled={busy}>Crear sesiÃ³n</button>
+              <button className="btn btn--gold btn--sm" onClick={createSession} disabled={busy}>Crear sesión</button>
             </div>
             {currentSession ? (
               <>
                 <div className="session-code-box">
-                  <span>CÃ³digo</span>
+                  <span>Código</span>
                   <b>{currentSession.code}</b>
                   <button className="btn btn--ghost btn--sm" onClick={() => navigator.clipboard?.writeText(currentSession.code)}>Copiar</button>
                 </div>
@@ -4796,33 +4715,33 @@ function RoleplayHub({ data, setData, sessionUser }) {
                       <span className="avatar avatar--xs">{initials(p.userName || "?")}</span>
                       <span>
                         <b>{p.userName}</b>
-                        <small>{p.assignedRole}{p.guide ? ` Â· ${p.guide}` : ""}</small>
+                        <small>{p.assignedRole}{p.guide ? ` · ${p.guide}` : ""}</small>
                       </span>
                     </div>
                   ))}
                 </div>
                 {currentSession.ownerUserId === sessionUser.id && currentSession.status !== "closed" && (
                   <button className="btn btn--danger-o btn--sm" onClick={() => closeSession(currentSession)} disabled={busy}>
-                    {busy ? "Finalizando..." : "Finalizar prÃ¡ctica"}
+                    {busy ? "Finalizando..." : "Finalizar práctica"}
                   </button>
                 )}
                 {false && currentSession.ownerUserId === sessionUser.id && currentSession.status !== "closed" && (
-                  <button className="btn btn--ghost btn--sm" onClick={() => closeSession(currentSession)} disabled={busy}>Cerrar sesiÃ³n</button>
+                  <button className="btn btn--ghost btn--sm" onClick={() => closeSession(currentSession)} disabled={busy}>Cerrar sesión</button>
                 )}
                 <button
                   className="btn btn--ghost btn--sm"
                   onClick={() => {
                     setHiddenSessionIds((prev) => prev.includes(currentSession.id) ? prev : [...prev, currentSession.id]);
                     setActiveSessionId("");
-                    setMsg("Saliste de esta prÃ¡ctica en tu pantalla.");
+                    setMsg("Saliste de esta práctica en tu pantalla.");
                   }}
                   disabled={busy}
                 >
-                  Salir de esta prÃ¡ctica
+                  Salir de esta práctica
                 </button>
               </>
             ) : (
-              <div className="empty empty--compact">AÃºn no tienes una sesiÃ³n activa. Crea una o Ãºnete con un cÃ³digo.</div>
+              <div className="empty empty--compact">Aún no tienes una sesión activa. Crea una o únete con un código.</div>
             )}
           </div>
 
@@ -4843,14 +4762,14 @@ function RoleplayHub({ data, setData, sessionUser }) {
           <div className="dash-panel-head">
             <div>
               <div className="dash-panel-title">{roleLabel(selectedRole)}</div>
-              <div className="dim">{selectedRole === "coordinador" ? "Materiales para consultar antes y durante el retiro." : "Juegos prÃ¡cticos asignados por administraciÃ³n."}</div>
+              <div className="dim">{selectedRole === "coordinador" ? "Materiales para consultar antes y durante el retiro." : "Juegos prácticos asignados por administración."}</div>
             </div>
           </div>
           {selectedRole === "coordinador" && (
             <div className="role-journey-strip">
               <span><b>1</b> Revisa PDFs</span>
               <span><b>2</b> Escucha audios</span>
-              <span><b>3</b> Usa abrir audio si el navegador bloquea la reproducciÃ³n</span>
+              <span><b>3</b> Usa abrir audio si el navegador bloquea la reproducción</span>
             </div>
           )}
           {selectedRole === "apoyo_interno" && (
@@ -4867,7 +4786,7 @@ function RoleplayHub({ data, setData, sessionUser }) {
   );
 }
 
-/* ================= AutenticaciÃ³n de participantes ================= */
+/* ================= Autenticación de participantes ================= */
 function PasswordInput({ value, onChange, placeholder, onEnter, className }) {
   const [show, setShow] = useState(false);
   return (
@@ -4887,7 +4806,7 @@ function PasswordInput({ value, onChange, placeholder, onEnter, className }) {
         title={show ? "Ocultar clave" : "Mostrar clave"}
         aria-label={show ? "Ocultar clave" : "Mostrar clave"}
       >
-        {show ? "ðŸ™ˆ" : "ðŸ‘ï¸"}
+        {show ? "🙈" : "👁️"}
       </button>
     </div>
   );
@@ -4934,12 +4853,12 @@ function AuthScreen({ data, setData, onLogin }) {
   const doRegister = async () => {
     setRErr(null);
     if (rName.trim().length < 3) { setRErr("Escribe tu nombre y apellido."); return; }
-    if (!isValidEmail(rEmail)) { setRErr("Escribe un correo vÃ¡lido."); return; }
-    if (users.some((x) => norm(x.name) === norm(rName))) { setRErr("Ya existe alguien con ese nombre. Si eres tÃº, inicia sesiÃ³n."); return; }
-    if (users.some((x) => normEmail(x.email) === normEmail(rEmail))) { setRErr("Ya existe un perfil con ese correo. Si eres tÃº, inicia sesiÃ³n o recupera tu clave."); return; }
+    if (!isValidEmail(rEmail)) { setRErr("Escribe un correo válido."); return; }
+    if (users.some((x) => norm(x.name) === norm(rName))) { setRErr("Ya existe alguien con ese nombre. Si eres tú, inicia sesión."); return; }
+    if (users.some((x) => normEmail(x.email) === normEmail(rEmail))) { setRErr("Ya existe un perfil con ese correo. Si eres tú, inicia sesión o recupera tu clave."); return; }
     if (rPass.length < 4) { setRErr("La clave debe tener al menos 4 caracteres."); return; }
     if (rPass !== rPass2) { setRErr("Las claves no coinciden."); return; }
-    if (!hasMeaningfulAnswer(rRetreat)) { setRErr("Escribe una fecha o referencia real de cuÃ¡ndo viviste tu retiro EJE."); return; }
+    if (!hasMeaningfulAnswer(rRetreat)) { setRErr("Escribe una fecha o referencia real de cuándo viviste tu retiro EJE."); return; }
     if (phraseKey(rPhrase) !== ACCESS_PHRASE_KEY) { setRErr("La frase de acceso no coincide."); return; }
     setBusy(true);
     const u = {
@@ -4958,7 +4877,7 @@ function AuthScreen({ data, setData, onLogin }) {
       setData(next);
       onLogin(u.id);
     } catch {
-      setRErr("No se pudo guardar tu registro. IntÃ©ntalo de nuevo.");
+      setRErr("No se pudo guardar tu registro. Inténtalo de nuevo.");
       setBusy(false);
     }
   };
@@ -4981,7 +4900,7 @@ function AuthScreen({ data, setData, onLogin }) {
       const next = { ...data, users: users.map((x) => (x.id === u.id ? { ...x, passHash: lightHash(fPass) } : x)) };
       await saveData(next, data);
       setData(next);
-      setFOk("Clave actualizada. Ya puedes iniciar sesiÃ³n con tu nueva clave.");
+      setFOk("Clave actualizada. Ya puedes iniciar sesión con tu nueva clave.");
       setLName(u.email || u.name);
       setLPass("");
       setFEmail("");
@@ -4991,7 +4910,7 @@ function AuthScreen({ data, setData, onLogin }) {
       setFPass2("");
       setTab("login");
     } catch {
-      setFErr("No se pudo actualizar la clave. IntÃ©ntalo otra vez.");
+      setFErr("No se pudo actualizar la clave. Inténtalo otra vez.");
     } finally {
       setBusy(false);
     }
@@ -5001,7 +4920,7 @@ function AuthScreen({ data, setData, onLogin }) {
     <div className="auth">
       <div className="auth-card">
         <div className="auth-tabs">
-          <button className={`auth-tab ${tab === "login" ? "auth-tab--on" : ""}`} onClick={() => setTab("login")}>Iniciar sesiÃ³n</button>
+          <button className={`auth-tab ${tab === "login" ? "auth-tab--on" : ""}`} onClick={() => setTab("login")}>Iniciar sesión</button>
           <button className={`auth-tab ${tab === "register" ? "auth-tab--on" : ""}`} onClick={() => setTab("register")}>Crear mi perfil</button>
         </div>
 
@@ -5016,33 +4935,33 @@ function AuthScreen({ data, setData, onLogin }) {
             <div className="auth-grid" style={{ marginTop: 10 }}>
               <div>
                 <label className="lbl">Nueva clave</label>
-                <PasswordInput value={fPass} onChange={setFPass} placeholder="MÃ­nimo 4 caracteres" />
+                <PasswordInput value={fPass} onChange={setFPass} placeholder="Mínimo 4 caracteres" />
               </div>
               <div>
                 <label className="lbl">Repite la nueva clave</label>
-                <PasswordInput value={fPass2} onChange={setFPass2} placeholder="â€¢â€¢â€¢â€¢" onEnter={doReset} />
+                <PasswordInput value={fPass2} onChange={setFPass2} placeholder="••••" onEnter={doReset} />
               </div>
             </div>
             {fErr && <div className="auth-err">{fErr}</div>}
             {fOk && <div className="ok-inline">{fOk}</div>}
             <button className="btn btn--gold" style={{ marginTop: 14, width: "100%", justifyContent: "center" }} onClick={doReset} disabled={busy}>Actualizar clave</button>
-            <button className="btn btn--ghost btn--sm auth-link-btn" onClick={() => setTab("login")}>Volver a iniciar sesiÃ³n</button>
+            <button className="btn btn--ghost btn--sm auth-link-btn" onClick={() => setTab("login")}>Volver a iniciar sesión</button>
           </div>
         ) : tab === "login" ? (
           <div className="auth-body">
             <label className="lbl">Nombre, apellido o correo</label>
             <input className="inp" value={lName} onChange={(e) => setLName(e.target.value)} placeholder="Como te registraste" onKeyDown={(e) => e.key === "Enter" && doLogin()} />
             <label className="lbl" style={{ marginTop: 10 }}>Tu clave</label>
-            <PasswordInput value={lPass} onChange={setLPass} placeholder="â€¢â€¢â€¢â€¢" onEnter={doLogin} />
+            <PasswordInput value={lPass} onChange={setLPass} placeholder="••••" onEnter={doLogin} />
             {lErr && <div className="auth-err">{lErr}</div>}
             {fOk && <div className="ok-inline">{fOk}</div>}
-            <button className="btn btn--gold" style={{ marginTop: 14, width: "100%", justifyContent: "center" }} onClick={doLogin}>Entrar âš½</button>
-            <button className="btn btn--ghost btn--sm auth-link-btn" onClick={() => setTab("forgot")}>OlvidÃ© mi clave</button>
+            <button className="btn btn--gold" style={{ marginTop: 14, width: "100%", justifyContent: "center" }} onClick={doLogin}>Entrar ⚽</button>
+            <button className="btn btn--ghost btn--sm auth-link-btn" onClick={() => setTab("forgot")}>Olvidé mi clave</button>
           </div>
         ) : (
           <div className="auth-body">
             <label className="lbl">Nombre y apellido *</label>
-            <input className="inp" value={rName} onChange={(e) => setRName(e.target.value)} placeholder="Ej. MarÃ­a Fernanda Rojas" />
+            <input className="inp" value={rName} onChange={(e) => setRName(e.target.value)} placeholder="Ej. María Fernanda Rojas" />
             <label className="lbl" style={{ marginTop: 10 }}>Correo *</label>
             <input className="inp" type="email" value={rEmail} onChange={(e) => setREmail(e.target.value)} placeholder="tu.correo@email.com" />
 
@@ -5052,14 +4971,14 @@ function AuthScreen({ data, setData, onLogin }) {
                 <input className="inp" type="date" value={rBirth} onChange={(e) => setRBirth(e.target.value)} />
               </div>
               <div>
-                <label className="lbl">Â¿CuÃ¡ndo viviste tu retiro EJE? *</label>
+                <label className="lbl">¿Cuándo viviste tu retiro EJE? *</label>
                 <input className="inp" value={rRetreat} onChange={(e) => setRRetreat(e.target.value)} placeholder="Ej. Noviembre 2023" />
                 <div className="auth-hint">Debe ser una fecha o referencia real, no solo puntos o guiones.</div>
               </div>
             </div>
 
-            <label className="lbl" style={{ marginTop: 10 }}>Â¿QuÃ© expectativas tienes sobre el retiro?</label>
-            <textarea className="inp" rows={3} value={rExpect} onChange={(e) => setRExpect(e.target.value)} placeholder="CuÃ©ntanos quÃ© esperas de esta experienciaâ€¦" />
+            <label className="lbl" style={{ marginTop: 10 }}>¿Qué expectativas tienes sobre el retiro?</label>
+            <textarea className="inp" rows={3} value={rExpect} onChange={(e) => setRExpect(e.target.value)} placeholder="Cuéntanos qué esperas de esta experiencia…" />
 
             <label className="lbl" style={{ marginTop: 10 }}>Frase de acceso *</label>
             <input className="inp" value={rPhrase} onChange={(e) => setRPhrase(e.target.value)} placeholder="Escribela como la recibiste" />
@@ -5068,19 +4987,19 @@ function AuthScreen({ data, setData, onLogin }) {
             <div className="auth-grid" style={{ marginTop: 10 }}>
               <div>
                 <label className="lbl">Crea una clave *</label>
-                <PasswordInput value={rPass} onChange={setRPass} placeholder="MÃ­nimo 4 caracteres" />
+                <PasswordInput value={rPass} onChange={setRPass} placeholder="Mínimo 4 caracteres" />
               </div>
               <div>
                 <label className="lbl">Repite la clave *</label>
-                <PasswordInput value={rPass2} onChange={setRPass2} placeholder="â€¢â€¢â€¢â€¢" />
+                <PasswordInput value={rPass2} onChange={setRPass2} placeholder="••••" />
               </div>
             </div>
 
             {rErr && <div className="auth-err">{rErr}</div>}
             <div className="auth-privacy">
-              ðŸ”’ Tus datos se guardan en esta aplicaciÃ³n para tu preparaciÃ³n. No uses una clave que uses en otros sitios: este espacio es seguro para el equipo, pero no es un banco.
+              🔒 Tus datos se guardan en esta aplicación para tu preparación. No uses una clave que uses en otros sitios: este espacio es seguro para el equipo, pero no es un banco.
             </div>
-            <button className="btn btn--gold" style={{ marginTop: 12, width: "100%", justifyContent: "center" }} onClick={doRegister} disabled={busy}>Crear mi perfil âš½</button>
+            <button className="btn btn--gold" style={{ marginTop: 12, width: "100%", justifyContent: "center" }} onClick={doRegister} disabled={busy}>Crear mi perfil ⚽</button>
           </div>
         )}
       </div>
@@ -5105,44 +5024,44 @@ function ProfileCard({ user, data, onClose, onLogout }) {
             <span className="avatar">{initials(user.name)}</span>
             <div>
               <div className="modal-title" style={{ fontSize: 24 }}>{user.name}</div>
-              {age != null && <div className="dim" style={{ fontSize: 13 }}>{age} aÃ±os</div>}
+              {age != null && <div className="dim" style={{ fontSize: 13 }}>{age} años</div>}
             </div>
           </div>
-          <button className="btn btn--ghost btn--sm" onClick={onClose}>Cerrar âœ•</button>
+          <button className="btn btn--ghost btn--sm" onClick={onClose}>Cerrar ✕</button>
         </div>
 
         {myStats ? (
           <div className="profile-stats">
             <div className="pstat"><span className="pstat-n t-gold">{formatChampionshipPoints(myStats.points)}</span><span className="pstat-l">pts campeonato</span></div>
-            <div className="pstat"><span className="pstat-n">{myStats.rank ? `${myStats.rank}Âº` : "â€”"}</span><span className="pstat-l">en la tabla</span></div>
+            <div className="pstat"><span className="pstat-n">{myStats.rank ? `${myStats.rank}º` : "—"}</span><span className="pstat-l">en la tabla</span></div>
             <div className="pstat"><span className="pstat-n">{myStats.played}/{myStats.totalGames || myStats.played}</span><span className="pstat-l">juegos</span></div>
             <div className="pstat"><span className="pstat-n">{myStats.correct}/{myStats.total}</span><span className="pstat-l">aciertos</span></div>
           </div>
         ) : (
           <div className="profile-nolink">
-            âš½ TodavÃ­a no estÃ¡s vinculado con los resultados del podio. El administrador puede conectarte con tu nombre de juego cuando participes.
+            ⚽ Todavía no estás vinculado con los resultados del podio. El administrador puede conectarte con tu nombre de juego cuando participes.
           </div>
         )}
 
         <div className="profile-route">
           <div className="profile-route-head">
             <span>Ruta formativa</span>
-            <b>{myRoute.completed}/{myRoute.total} bloques Â· {myRoute.percent}%</b>
+            <b>{myRoute.completed}/{myRoute.total} bloques · {myRoute.percent}%</b>
           </div>
           <span className="route-progress-bar"><i style={{ width: `${myRoute.percent}%` }} /></span>
         </div>
 
         <div className="profile-field"><span className="pf-l">Correo</span><span className="pf-v">{user.email || "Pendiente"}</span></div>
-        <div className="profile-field"><span className="pf-l">ðŸŽ‚ Nacimiento</span><span className="pf-v">{fmtDate(user.birthdate)}</span></div>
-        <div className="profile-field"><span className="pf-l">â›ª ViviÃ³ su EJE</span><span className="pf-v">{user.retreatDate || "â€”"}</span></div>
+        <div className="profile-field"><span className="pf-l">🎂 Nacimiento</span><span className="pf-v">{fmtDate(user.birthdate)}</span></div>
+        <div className="profile-field"><span className="pf-l">⛪ Vivió su EJE</span><span className="pf-v">{user.retreatDate || "—"}</span></div>
         {user.expectations && (
           <div className="profile-expect">
-            <div className="pf-l" style={{ marginBottom: 4 }}>ðŸ’­ Sus expectativas</div>
+            <div className="pf-l" style={{ marginBottom: 4 }}>💭 Sus expectativas</div>
             <div className="pf-quote">"{user.expectations}"</div>
           </div>
         )}
 
-        <button className="btn btn--ghost btn--sm" style={{ marginTop: 16 }} onClick={onLogout}>Cerrar sesiÃ³n</button>
+        <button className="btn btn--ghost btn--sm" style={{ marginTop: 16 }} onClick={onLogout}>Cerrar sesión</button>
       </div>
     </div>
   );
@@ -5157,9 +5076,9 @@ function EmailUpdateModal({ user, data, setData, onLogout }) {
   const saveEmail = async () => {
     setErr(null);
     const clean = normEmail(email);
-    if (!isValidEmail(clean)) { setErr("Escribe un correo vÃ¡lido."); return; }
+    if (!isValidEmail(clean)) { setErr("Escribe un correo válido."); return; }
     if (users.some((u) => u.id !== user.id && normEmail(u.email) === clean)) {
-      setErr("Ese correo ya estÃ¡ registrado en otro perfil.");
+      setErr("Ese correo ya está registrado en otro perfil.");
       return;
     }
     setBusy(true);
@@ -5168,7 +5087,7 @@ function EmailUpdateModal({ user, data, setData, onLogout }) {
       await saveData(next, data);
       setData(next);
     } catch {
-      setErr("No se pudo guardar el correo. IntÃ©ntalo otra vez.");
+      setErr("No se pudo guardar el correo. Inténtalo otra vez.");
     } finally {
       setBusy(false);
     }
@@ -5180,7 +5099,7 @@ function EmailUpdateModal({ user, data, setData, onLogout }) {
         <div className="modal-head">
           <div>
             <div className="modal-title">Actualiza tu correo</div>
-            <div className="dim" style={{ fontSize: 13 }}>Lo usaremos para recuperar tu clave y dar seguimiento a tu preparaciÃ³n.</div>
+            <div className="dim" style={{ fontSize: 13 }}>Lo usaremos para recuperar tu clave y dar seguimiento a tu preparación.</div>
           </div>
         </div>
         <label className="lbl">Correo</label>
@@ -5188,7 +5107,7 @@ function EmailUpdateModal({ user, data, setData, onLogout }) {
         {err && <div className="auth-err">{err}</div>}
         <div className="email-update-actions">
           <button className="btn btn--gold" onClick={saveEmail} disabled={busy}>Guardar correo</button>
-          <button className="btn btn--ghost btn--sm" onClick={onLogout} disabled={busy}>Cerrar sesiÃ³n</button>
+          <button className="btn btn--ghost btn--sm" onClick={onLogout} disabled={busy}>Cerrar sesión</button>
         </div>
       </div>
     </div>
@@ -5341,7 +5260,7 @@ export default function App() {
   if (loading)
     return (
       <Shell>
-        <div className="empty" style={{ padding: 90 }}>Cargando resultadosâ€¦</div>
+        <div className="empty" style={{ padding: 90 }}>Cargando resultados…</div>
       </Shell>
     );
 
@@ -5367,8 +5286,8 @@ export default function App() {
         <div className="scoreboard">
           <span className="sb-dot" />
           <span className="sb-live">EN VIVO</span>
-          <span className="sb-sep">Â·</span>
-          <span className="sb-label">COPA MUNDIAL Â· PREPARACIÃ“N RETIRO</span>
+          <span className="sb-sep">·</span>
+          <span className="sb-label">COPA MUNDIAL · PREPARACIÓN RETIRO</span>
         </div>
         <div className="hero-title">
           <svg className="logo-svg" viewBox="0 0 520 220" role="img" aria-label="EJE 2026">
@@ -5394,11 +5313,11 @@ export default function App() {
             <text x="260" y="118" textAnchor="middle" className="logo-eje" fill="url(#lgSilver)" filter="url(#lgShadow)">EJE</text>
             <text x="235" y="196" textAnchor="middle" className="logo-year" fill="url(#lgGold)" filter="url(#lgGoldGlow)">2026</text>
             <g className="logo-ball" style={{ transformOrigin: "430px 178px" }}>
-              <text x="430" y="196" textAnchor="middle" className="logo-ballglyph">âš½</text>
+              <text x="430" y="196" textAnchor="middle" className="logo-ballglyph">⚽</text>
             </g>
           </svg>
         </div>
-        <div className="hero-sub">PreparaciÃ³n del equipo de servidores</div>
+        <div className="hero-sub">Preparación del equipo de servidores</div>
       </header>
 
       <div className="userbar">
@@ -5419,16 +5338,16 @@ export default function App() {
         <>
           <div className="mode-switch">
             <button className={`mode-btn ${mode === "ruta" ? "mode-btn--on" : ""}`} onClick={() => setMode("ruta")}>
-              ðŸŸï¸ Ruta Formativa
+              🏟️ Ruta Formativa
             </button>
             <button className={`mode-btn ${mode === "podio" ? "mode-btn--on" : ""}`} onClick={() => setMode("podio")}>
-              ðŸ† Podio y Resultados
+              🏆 Podio y Resultados
             </button>
             <button className={`mode-btn ${mode === "roles" ? "mode-btn--on" : ""}`} onClick={() => setMode("roles")}>
               Juego de roles
             </button>
             <button className="mode-btn" onClick={() => setShowQuestionBox(true)}>
-              ðŸ’¬ BuzÃ³n de preguntas
+              💬 Buzón de preguntas
             </button>
           </div>
 
@@ -5452,7 +5371,7 @@ export default function App() {
             <>
               <nav className="chipbar">
                 <button className={`chip chip--gold ${consolidated ? "chip--on" : ""}`} onClick={() => setSel("consolidado")}>
-                  ðŸ† Consolidado
+                  🏆 Consolidado
                 </button>
                 {data.exercises.map((ex) => (
                   <button key={ex.id} className={`chip ${sel === ex.id ? "chip--on" : ""}`} onClick={() => setSel(ex.id)}>
@@ -5463,8 +5382,8 @@ export default function App() {
 
               {data.exercises.length === 0 ? (
                 <div className="empty" style={{ padding: "70px 20px" }}>
-                  <div style={{ fontSize: 42 }}>ðŸŸï¸</div>
-                  <div style={{ marginTop: 10 }}>AÃºn no hay resultados cargados.<br />Entra al panel de administraciÃ³n para subir el primer ejercicio.</div>
+                  <div style={{ fontSize: 42 }}>🏟️</div>
+                  <div style={{ marginTop: 10 }}>Aún no hay resultados cargados.<br />Entra al panel de administración para subir el primer ejercicio.</div>
                 </div>
               ) : (
                 <>
@@ -5484,8 +5403,8 @@ export default function App() {
                       setMuted={setMuted}
                       subtitle={
                         consolidated
-                          ? "ClasificaciÃ³n general Â· puntos por aciertos del primer intento"
-                          : `"${currentEx.title}" Â· aciertos del primer intento${hasScores(currentEx) ? " Â· desempate por rapidez Wordwall" : ""}`
+                          ? "Clasificación general · puntos por aciertos del primer intento"
+                          : `"${currentEx.title}" · aciertos del primer intento${hasScores(currentEx) ? " · desempate por rapidez Wordwall" : ""}`
                       }
                     />
                   )}
@@ -5531,14 +5450,14 @@ export default function App() {
       )}
 
       <footer className="foot">
-        <button className="btn btn--ghost btn--sm" onClick={async () => { const d = sessionUser ? await loadData() : await loadAuthData(); if (d) setData(d); }}>â†» Actualizar datos</button>
-        <button className="btn btn--ghost btn--sm" onClick={() => setView("pin")}>âš™ AdministraciÃ³n</button>
+        <button className="btn btn--ghost btn--sm" onClick={async () => { const d = sessionUser ? await loadData() : await loadAuthData(); if (d) setData(d); }}>↻ Actualizar datos</button>
+        <button className="btn btn--ghost btn--sm" onClick={() => setView("pin")}>⚙ Administración</button>
       </footer>
     </Shell>
   );
 }
 
-/* ================= Shell + sistema de diseÃ±o ================= */
+/* ================= Shell + sistema de diseño ================= */
 function Shell({ children }) {
   return (
     <div className="app">
@@ -5846,7 +5765,7 @@ kbd{background:var(--card2);border:1px solid var(--line2);border-bottom-width:2p
 .mention-name{font-weight:800}
 .mention-score{color:var(--turf);font-size:13px;font-family:var(--mono);font-variant-numeric:tabular-nums}
 
-/* ---------- ExplicaciÃ³n de puntos ---------- */
+/* ---------- Explicación de puntos ---------- */
 .scoring{margin:0 auto 22px;max-width:640px}
 .scoring-toggle{width:100%;display:flex;justify-content:space-between;align-items:center;gap:10px;
   background:linear-gradient(180deg,var(--card2),var(--card));border:1px solid var(--line);border-radius:14px;
@@ -5866,7 +5785,7 @@ kbd{background:var(--card2);border:1px solid var(--line2);border-bottom-width:2p
 .scoring-l{font-size:12px;color:var(--dim);font-family:var(--mono)}
 .scoring-p{font-weight:800;color:var(--gold);font-family:var(--mono);font-variant-numeric:tabular-nums}
 
-/* ---------- FusiÃ³n ---------- */
+/* ---------- Fusión ---------- */
 .detect-banner{margin-top:12px;background:#FFC5311a;border:1px solid #FFC53155;border-radius:12px;
   padding:11px 14px;font-size:13px;line-height:1.5}
 .destino--merge{border-color:#16DB9355}
@@ -5992,7 +5911,6 @@ tr.row--top .champ-pill{background:#FFC53124;border-color:#FFC53177}
 .alias-raw{min-width:145px;font-weight:700}
 .ex-card{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;transition:var(--tr)}
 .ex-card:hover{border-color:var(--line2);transform:translateY(-1px)}
-.sync-card{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;border-color:var(--line2)}
 .ex-title{font-weight:800;font-size:15px}
 .ex-actions{display:flex;gap:8px}
 .part-card{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;transition:var(--tr)}
@@ -6041,7 +5959,7 @@ button:focus-visible,.inp:focus-visible{outline:2px solid var(--turf);outline-of
 .user-chip-badge{font-family:var(--mono);font-size:10px;letter-spacing:1px;color:var(--turf);
   background:#16DB931a;border:1px solid #16DB9344;border-radius:999px;padding:3px 9px}
 
-/* ---------- Pantalla de autenticaciÃ³n ---------- */
+/* ---------- Pantalla de autenticación ---------- */
 .auth{max-width:520px;margin:20px auto 0}
 .auth-card{background:linear-gradient(180deg,var(--card2),var(--card));border:1px solid var(--line2);
   border-radius:20px;overflow:hidden;box-shadow:0 20px 60px #00000066}
@@ -6327,7 +6245,7 @@ button:focus-visible,.inp:focus-visible{outline:2px solid var(--turf);outline-of
   display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;font-size:13.5px}
 .del-confirm-actions{display:flex;gap:8px;flex:none}
 
-/* estaciÃ³n bloqueada (vista pÃºblica) */
+/* estación bloqueada (vista pública) */
 .station--locked .station-node{border-color:#5A6799;color:var(--dim)}
 .station--locked .station-card{opacity:.72;cursor:not-allowed;border-color:var(--line);
   background:linear-gradient(180deg,#12172b,#0d1120)}
@@ -6449,4 +6367,3 @@ button:focus-visible,.inp:focus-visible{outline:2px solid var(--turf);outline-of
   .role-journey-strip span,.admin-helper-strip span{width:100%;border-radius:10px}
 }
 `;
-
