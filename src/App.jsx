@@ -487,26 +487,45 @@ async function updateGamePlayedAlert(id, status = "resolved") {
 }
 
 async function sendGameAlertEmail(alert, user, block, resource, exerciseTitle = "", notifyEmail = "") {
+  return requestGameAlertEmail({
+    userName: user?.name || alert?.userName || "Participante",
+    userEmail: user?.email || "",
+    notifyEmail,
+    blockTitle: block?.title || alert?.blockTitle || "",
+    resourceLabel: resource?.label || alert?.resourceLabel || "Juego Wordwall",
+    exerciseId: resource?.exerciseId || alert?.exerciseId || "",
+    exerciseTitle,
+    playedAt: alert?.playedAt || new Date().toISOString(),
+  });
+}
+
+async function sendTestGameAlertEmail(notifyEmail = "") {
+  return requestGameAlertEmail({
+    userName: "Prueba de correo",
+    userEmail: "",
+    notifyEmail,
+    blockTitle: "Prueba de configuración",
+    resourceLabel: "Juego Wordwall de prueba",
+    exerciseTitle: "Prueba de podio",
+    playedAt: new Date().toISOString(),
+    isTest: true,
+  });
+}
+
+async function requestGameAlertEmail(payload) {
   try {
     const res = await fetch("/api/game-alert-email", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        userName: user?.name || alert?.userName || "Participante",
-        userEmail: user?.email || "",
-        notifyEmail,
-        blockTitle: block?.title || alert?.blockTitle || "",
-        resourceLabel: resource?.label || alert?.resourceLabel || "Juego Wordwall",
-        exerciseId: resource?.exerciseId || alert?.exerciseId || "",
-        exerciseTitle,
-        playedAt: alert?.playedAt || new Date().toISOString(),
-      }),
+      body: JSON.stringify(payload),
     });
-    if (!res.ok) throw new Error("email failed");
-    return true;
+    if (!res.ok) return { ok: false, error: `La función de correo no respondió correctamente (${res.status}).` };
+    const json = await res.json().catch(() => ({}));
+    if (!json.ok) return { ok: false, error: json.error || "La función respondió, pero no confirmó el envío." };
+    return { ok: true, id: json.id || "" };
   } catch (e) {
-    console.warn("sendGameAlertEmail:", e);
-    return false;
+    console.warn("requestGameAlertEmail:", e);
+    return { ok: false, error: "No se pudo contactar /api/game-alert-email. Revisa que el archivo exista en la carpeta api del repositorio." };
   }
 }
 
@@ -3410,6 +3429,8 @@ function GameAlertsAdmin({ data, busy, onResolve, onSaveAlertEmail }) {
   const [filter, setFilter] = useState("pending");
   const [query, setQuery] = useState("");
   const [email, setEmail] = useState(data.notifications?.gameAlertEmail || "");
+  const [testMsg, setTestMsg] = useState(null);
+  const [testBusy, setTestBusy] = useState(false);
   const alerts = data.gameAlerts || [];
   const pending = pendingGameAlerts(data);
   useEffect(() => {
@@ -3432,6 +3453,16 @@ function GameAlertsAdmin({ data, busy, onResolve, onSaveAlertEmail }) {
     );
     copyText(lines.join("\n"), `${lines.length} aviso(s) copiado(s).`);
   };
+  const testEmail = async () => {
+    setTestMsg(null);
+    setTestBusy(true);
+    const result = await sendTestGameAlertEmail(email);
+    setTestBusy(false);
+    setTestMsg(result.ok
+      ? { ok: true, t: "Correo de prueba enviado. Revisa tu bandeja y spam." }
+      : { ok: false, t: result.error || "No se pudo enviar el correo de prueba." }
+    );
+  };
 
   return (
     <div className="questions-admin">
@@ -3444,15 +3475,21 @@ function GameAlertsAdmin({ data, busy, onResolve, onSaveAlertEmail }) {
         <button className="btn btn--gold btn--sm" onClick={copyPending} disabled={!pending.length}>Copiar pendientes</button>
       </div>
 
-      <div className="card attendance-tools questions-tools">
-        <label className="filter-group">
-          <span>Correo que recibe avisos</span>
-          <input className="inp" type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="Si queda vacío usa ADMIN_NOTIFY_EMAIL de Vercel" />
-        </label>
-        <div className="filter-group">
-          <span>Guardar correo</span>
-          <button className="btn btn--teal-o btn--sm" onClick={() => onSaveAlertEmail(email)} disabled={busy}>Guardar correo</button>
+      <div className="card game-notify-card">
+        <div className="game-notify-copy">
+          <div className="dash-panel-title">Correo de avisos</div>
+          <div className="dim">Destino para recibir correos cuando alguien avise que logró 80% o más.</div>
         </div>
+        <div className="game-notify-form">
+          <input className="inp" type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="correo@ejemplo.com" />
+          <button className="btn btn--teal-o btn--sm" onClick={() => onSaveAlertEmail(email)} disabled={busy}>Guardar</button>
+          <button className="btn btn--ghost btn--sm" onClick={testEmail} disabled={testBusy}>{testBusy ? "Probando..." : "Probar envío"}</button>
+        </div>
+        <div className="game-notify-help">Si queda vacío, se usará el correo configurado en Vercel como <b>ADMIN_NOTIFY_EMAIL</b>.</div>
+        {testMsg && <div className={testMsg.ok ? "ok-inline" : "warn-inline"}>{testMsg.t}</div>}
+      </div>
+
+      <div className="card game-alert-filters">
         <label className="filter-group">
           <span>Estado</span>
           <select className="inp" value={filter} onChange={(e) => setFilter(e.target.value)}>
@@ -6656,6 +6693,12 @@ button:focus-visible,.inp:focus-visible{outline:2px solid var(--turf);outline-of
 .game-alert-row{display:flex;align-items:center;gap:8px;flex-wrap:wrap;background:var(--bg0);border:1px solid var(--line);border-radius:12px;padding:8px}
 .game-alert-row--sent{border-color:#16DB9344;background:#16DB930d}
 .game-alert-help{margin-top:8px;color:var(--dim);font-size:12px;line-height:1.4}
+.game-notify-card{display:grid;grid-template-columns:minmax(220px,.8fr) minmax(320px,1.2fr);align-items:center;gap:14px;border-color:var(--line2)}
+.game-notify-copy{min-width:0}
+.game-notify-form{display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:10px;align-items:center}
+.game-notify-form .btn{min-width:96px;justify-content:center}
+.game-notify-help{grid-column:1/-1;color:var(--dim);font-size:12px;line-height:1.4}
+.game-alert-filters{display:grid;grid-template-columns:minmax(180px,.6fr) minmax(240px,1.4fr);gap:12px;align-items:end}
 .game-admin-row{display:grid;gap:10px}
 .game-admin-row--done{opacity:.72}
 .game-alert-detail{display:grid;gap:6px;background:var(--bg0);border:1px solid var(--line);border-radius:10px;padding:10px 12px;font-size:13px}
@@ -6822,6 +6865,8 @@ button:focus-visible,.inp:focus-visible{outline:2px solid var(--turf);outline-of
   .roleplay-hero{align-items:flex-start}
   .join-box .inp{width:100%}
   .join-box{width:100%}
+  .game-notify-card,.game-alert-filters,.game-notify-form{grid-template-columns:1fr}
+  .game-notify-form .btn{width:100%}
   .role-user-resource audio{min-width:0;width:100%}
   .role-audio{min-width:0;width:100%}
   .role-journey-strip span,.admin-helper-strip span{width:100%;border-radius:10px}
