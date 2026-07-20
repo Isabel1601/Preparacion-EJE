@@ -1451,11 +1451,12 @@ function blockLearningStatus(data, user, block) {
   const requiredGames = games.filter((g) => g.required);
   const gamesOk = requiredGames.every((g) => g.passed);
   const requirementsMet = audioOk && gamesOk;
-  const completed = !!row?.completed && requirementsMet;
+  const attendanceCompletesBlock = attended && !hasAudio && requiredGames.length === 0;
+  const completed = (!!row?.completed || attendanceCompletesBlock) && requirementsMet;
   const missing = [];
   if (!audioOk) missing.push("audio");
   if (!gamesOk) missing.push("juegos vinculados y aprobados >=80%");
-  return { row, attended, hasAudio, audioOk, games, requiredGames, gamesOk, requirementsMet, completed, missing };
+  return { row, attended, hasAudio, audioOk, games, requiredGames, gamesOk, requirementsMet, attendanceCompletesBlock, completed, missing };
 }
 function routeProgressStats(data, user) {
   const blocks = activeRouteBlocks(data?.route || emptyRoute());
