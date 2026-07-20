@@ -49,12 +49,8 @@ async function sbFetch(path, opts = {}) {
 async function sbUpload(file) {
   const safe = file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
   const path = `${Date.now()}_${safe}`;
-  const rawType = file.type || mimeFromFileName(safe);
-  const extAudio = /\.(mp3|m4a|wav|ogg|aac|opus|mpeg|mpg)$/i.test(safe);
-  const esAudio = /^audio\//.test(rawType) || extAudio;
-  // Si el navegador reporta un type raro (video/mpeg, application/octet-stream) pero la extensión
-  // dice que es audio, normalizamos a audio/mpeg para que el bucket lo acepte.
-  const contentType = esAudio && !/^audio\//.test(rawType) ? "audio/mpeg" : rawType;
+  const contentType = file.type || mimeFromFileName(safe);
+  const esAudio = /^audio\//.test(contentType) || /\.(mp3|m4a|wav|ogg|aac|opus)$/i.test(safe);
   const bucket = esAudio ? "audios" : "presentaciones";
   const res = await fetch(`${SUPABASE_URL}/storage/v1/object/${bucket}/${encodeURIComponent(path)}`, {
     method: "POST",
