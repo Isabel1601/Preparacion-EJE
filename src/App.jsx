@@ -3543,16 +3543,28 @@ function AdminPanel({ data, setData, onExit }) {
     setMsg(null);
     try {
       const presentSet = new Set(presentIds);
+      const targetBlock = (data.route?.blocks || []).find((b) => b.id === targetBlockId);
+      const attendanceOnlyBlock = !!targetBlock && !targetBlock.audioUrl && !(targetBlock.resources || []).some((r) => r.type === "game");
       const savedRows = await Promise.all((data.users || []).map((u) =>
         saveSessionAttendance(u.id, targetBlockId, presentSet.has(u.id))
       ));
+      const savedProgressRows = attendanceOnlyBlock
+        ? await Promise.all((data.users || []).map((u) =>
+            saveBlockProgress(u.id, targetBlockId, presentSet.has(u.id))
+          ))
+        : [];
       const otherRows = (data.attendance || []).filter((a) => a.blockId !== targetBlockId);
-      const next = { ...data, attendance: [...otherRows, ...savedRows] };
+      const otherProgressRows = attendanceOnlyBlock ? (data.progress || []).filter((p) => p.blockId !== targetBlockId) : (data.progress || []);
+      const next = {
+        ...data,
+        attendance: [...otherRows, ...savedRows],
+        progress: attendanceOnlyBlock ? [...otherProgressRows, ...savedProgressRows] : otherProgressRows,
+      };
       setData(next);
       const count = savedRows.filter((r) => r.attended).length;
-      setMsg({ ok: true, t: `Asistencia guardada: ${count} participante(s) marcado(s).` });
+      setMsg({ ok: true, t: `Asistencia guardada: ${count} participante(s) marcado(s).${attendanceOnlyBlock ? " Este bloque tambien quedo sincronizado con el avance de ruta." : ""}` });
     } catch (e) {
-      setMsg({ ok: false, t: "No se pudo guardar la asistencia. Revisa que la tabla session_attendance exista en Supabase." });
+      setMsg({ ok: false, t: "No se pudo guardar la asistencia. Revisa que las tablas session_attendance y route_progress existan en Supabase." });
     } finally {
       setBusy(false);
     }
