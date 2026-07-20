@@ -10,8 +10,11 @@ module.exports = async function handler(req, res) {
   const notifyEmail = clean(body.notifyEmail || "");
   const to = notifyEmail || process.env.ADMIN_NOTIFY_EMAIL;
 
-  if (!apiKey || !to) {
-    return res.status(200).json({ ok: false, skipped: true, error: "Email environment variables missing" });
+  if (!apiKey) {
+    return res.status(200).json({ ok: false, skipped: true, error: "Falta RESEND_API_KEY en Vercel." });
+  }
+  if (!to) {
+    return res.status(200).json({ ok: false, skipped: true, error: "Falta ADMIN_NOTIFY_EMAIL en Vercel o un correo guardado en la app." });
   }
 
   const userName = clean(body.userName || "Participante");
@@ -24,11 +27,12 @@ module.exports = async function handler(req, res) {
     ? ""
     : playedAt.toLocaleString("es-PE", { timeZone: "America/Lima" });
 
-  const subject = `EJE 2026: ${userName} aviso que ya jugo`;
+  const isTest = !!body.isTest;
+  const subject = isTest ? "EJE 2026: prueba de correo de avisos" : `EJE 2026: ${userName} aviso que ya jugo`;
   const html = `
     <div style="font-family:Arial,sans-serif;line-height:1.5;color:#172033">
-      <h2 style="margin:0 0 12px">Aviso de juego Wordwall</h2>
-      <p><b>${escapeHtml(userName)}</b> aviso que ya jugo y necesita actualizacion de resultados.</p>
+      <h2 style="margin:0 0 12px">${isTest ? "Prueba de correo" : "Aviso de juego Wordwall"}</h2>
+      <p>${isTest ? "Este es un correo de prueba para confirmar que los avisos estan configurados." : `<b>${escapeHtml(userName)}</b> aviso que ya jugo y necesita actualizacion de resultados.`}</p>
       <table style="border-collapse:collapse;margin-top:12px">
         ${row("Participante", userName)}
         ${row("Correo", userEmail || "No registrado")}
@@ -57,10 +61,11 @@ module.exports = async function handler(req, res) {
 
   if (!response.ok) {
     const text = await response.text().catch(() => "");
-    return res.status(200).json({ ok: false, error: text || "Email provider failed" });
+    return res.status(200).json({ ok: false, error: explainResendError(text) });
   }
 
-  return res.status(200).json({ ok: true });
+  const sent = await response.json().catch(() => ({}));
+  return res.status(200).json({ ok: true, id: sent.id || "" });
 };
 
 function clean(value) {
@@ -90,4 +95,13 @@ function row(label, value) {
       <td style="padding:6px 0;font-weight:700">${escapeHtml(value)}</td>
     </tr>
   `;
+}
+
+function explainResendError(text) {
+  const raw = String(text || "").trim();
+  if (!raw) return "Resend rechazó el envío sin detalle. Revisa RESEND_API_KEY, EMAIL_FROM y el dominio remitente.";
+  if (/domain|from|sender/i.test(raw)) return `Resend rechazó el remitente. Revisa EMAIL_FROM o verifica un dominio en Resend. Detalle: ${raw}`;
+  if (/api.?key|unauthorized|invalid/i.test(raw)) return `Resend rechazó la clave. Revisa RESEND_API_KEY en Vercel. Detalle: ${raw}`;
+  if (/recipient|to/i.test(raw)) return `Resend rechazó el destinatario. Revisa el correo configurado. Detalle: ${raw}`;
+  return `Resend no aceptó el envío. Detalle: ${raw}`;
 }
