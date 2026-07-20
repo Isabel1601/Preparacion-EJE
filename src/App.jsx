@@ -132,6 +132,7 @@ const ROLEPLAY_ROLES = [
   { key: "apoyo_externo", label: "Apoyo externo", hint: "Practica con juegos asignados por administración." },
   { key: "coordinador", label: "Coordinador", hint: "Consulta PDFs y audios necesarios para el retiro." },
 ];
+const ALL_ROLE_KEYS = ROLEPLAY_ROLES.map((r) => r.key);
 const DEFAULT_ASCOS_TYPES = [
   { id: "pregunton", name: "El Preguntón Eterno", guide: "Solo quiere hacerse notar." },
   { id: "cabeza_dura", name: "El Cabeza Dura", guide: "No entiende razones y no quiere aprender de otros." },
@@ -190,6 +191,7 @@ function mapUsers(userRows = []) {
     name: u.name,
     email: u.email || "",
     passHash: u.pass_hash,
+    roleAccess: parseRoleAccess(u.role_access),
     birthdate: u.birthdate || "",
     retreatDate: u.retreat_date || "",
     expectations: u.expectations || "",
@@ -237,6 +239,24 @@ function mapQuestions(questionRows = []) {
   }));
 }
 
+function mapGameAlerts(alertRows = []) {
+  return (alertRows || []).map((a) => ({
+    id: a.id,
+    userId: a.user_id || "",
+    userName: a.user_name || "",
+    blockId: a.block_id || "",
+    blockTitle: a.block_title || "",
+    resourceId: a.resource_id || "",
+    resourceLabel: a.resource_label || "",
+    exerciseId: a.exercise_id || "",
+    status: a.status || "pending",
+    playedAt: a.played_at || "",
+    resolvedAt: a.resolved_at || "",
+    createdAt: a.created_at || "",
+    updatedAt: a.updated_at || "",
+  }));
+}
+
 function safeJsonArray(value) {
   if (Array.isArray(value)) return value;
   if (!value) return [];
@@ -249,6 +269,17 @@ function safeJsonArray(value) {
     }
   }
   return [];
+}
+function parseRoleAccess(value) {
+  if (value == null || value === "") return null;
+  if (Array.isArray(value)) return value.filter((key) => ALL_ROLE_KEYS.includes(key));
+  return safeJsonArray(value).filter((key) => ALL_ROLE_KEYS.includes(key));
+}
+function roleAccessFor(user) {
+  return Array.isArray(user?.roleAccess) ? user.roleAccess : ALL_ROLE_KEYS;
+}
+function canSeeRole(user, roleKey) {
+  return roleAccessFor(user).includes(roleKey);
 }
 
 function mapRoleplaySessions(sessionRows = []) {
@@ -304,6 +335,16 @@ async function loadQuestions() {
     return mapQuestions(rows);
   } catch (e) {
     console.warn("loadQuestions Supabase:", e);
+    return [];
+  }
+}
+
+async function loadGameAlerts() {
+  try {
+    const rows = await sbFetch("game_play_alerts?select=*&order=updated_at.desc");
+    return mapGameAlerts(rows);
+  } catch (e) {
+    console.warn("loadGameAlerts Supabase:", e);
     return [];
   }
 }
@@ -406,6 +447,69 @@ async function updateQuestionBox(id, patch = {}) {
   return mapQuestions(saved)[0];
 }
 
+async function recordGamePlayedAlert(user, block, resource) {
+  const now = new Date().toISOString();
+  const row = {
+    id: `${user?.id || "anon"}_${resource?.id || uid()}`,
+    user_id: user?.id || null,
+    user_name: user?.name || "",
+    block_id: block?.id || null,
+    block_title: block?.title || "",
+    resource_id: resource?.id || null,
+    resource_label: resource?.label || "Juego Wordwall",
+    exercise_id: resource?.exerciseId || null,
+    status: "pending",
+    played_at: now,
+    resolved_at: null,
+    updated_at: now,
+  };
+  const saved = await sbFetch("game_play_alerts?on_conflict=user_id,resource_id", {
+    method: "POST",
+    headers: { Prefer: "resolution=merge-duplicates,return=representation" },
+    body: JSON.stringify(row),
+  });
+  return mapGameAlerts(saved)[0] || mapGameAlerts([row])[0];
+}
+
+async function updateGamePlayedAlert(id, status = "resolved") {
+  const now = new Date().toISOString();
+  const row = {
+    status,
+    resolved_at: status === "resolved" ? now : null,
+    updated_at: now,
+  };
+  const saved = await sbFetch(`game_play_alerts?id=eq.${encodeURIComponent(id)}`, {
+    method: "PATCH",
+    headers: { Prefer: "return=representation" },
+    body: JSON.stringify(row),
+  });
+  return mapGameAlerts(saved)[0];
+}
+
+async function sendGameAlertEmail(alert, user, block, resource, exerciseTitle = "", notifyEmail = "") {
+  try {
+    const res = await fetch("/api/game-alert-email", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        userName: user?.name || alert?.userName || "Participante",
+        userEmail: user?.email || "",
+        notifyEmail,
+        blockTitle: block?.title || alert?.blockTitle || "",
+        resourceLabel: resource?.label || alert?.resourceLabel || "Juego Wordwall",
+        exerciseId: resource?.exerciseId || alert?.exerciseId || "",
+        exerciseTitle,
+        playedAt: alert?.playedAt || new Date().toISOString(),
+      }),
+    });
+    if (!res.ok) throw new Error("email failed");
+    return true;
+  } catch (e) {
+    console.warn("sendGameAlertEmail:", e);
+    return false;
+  }
+}
+
 async function saveRoleplaySession(session) {
   const now = new Date().toISOString();
   const row = {
@@ -448,7 +552,7 @@ async function recordRoleplayEvent(user, roleType, resourceId = "", eventType = 
 /* ===== Carga: arma el objeto 'data' leyendo las 4 tablas ===== */
 async function loadData() {
   try {
-    const [configRows, routeRows, exRows, userRows, progress, attendance, questions, roleplaySessions, roleplayEvents] = await Promise.all([
+    const [configRows, routeRows, exRows, userRows, progress, attendance, questions, gameAlerts, roleplaySessions, roleplayEvents] = await Promise.all([
       sbFetch("config?id=eq.main&select=data"),
       sbFetch("route?id=eq.main&select=data"),
       sbFetch("exercises?select=id,data&order=created_at.asc"),
@@ -456,6 +560,7 @@ async function loadData() {
       loadProgress(),
       loadAttendance(),
       loadQuestions(),
+      loadGameAlerts(),
       loadRoleplaySessions(),
       loadRoleplayEvents(),
     ]);
@@ -467,12 +572,14 @@ async function loadData() {
       pin: config.pin ?? null,
       aliases: config.aliases || {},
       excluded: config.excluded || [],
+      notifications: config.notifications || {},
       route,
       exercises,
       users,
       progress,
       attendance,
       questions,
+      gameAlerts,
       roleplay: normalizeRoleplay(config.roleplay),
       roleplaySessions,
       roleplayEvents,
@@ -495,6 +602,7 @@ async function loadAuthData() {
       pin: config.pin ?? null,
       aliases: config.aliases || {},
       excluded: config.excluded || [],
+      notifications: config.notifications || {},
       users: mapUsers(userRows),
     };
   } catch (e) {
@@ -509,9 +617,9 @@ async function saveData(next, prev) {
   const p = prev || {};
 
   // config (pin, aliases, excluded)
-  const cfgNext = { pin: next.pin ?? null, aliases: next.aliases || {}, excluded: next.excluded || [] };
+  const cfgNext = { pin: next.pin ?? null, aliases: next.aliases || {}, excluded: next.excluded || [], notifications: next.notifications || {} };
   cfgNext.roleplay = normalizeRoleplay(next.roleplay);
-  const cfgPrev = { pin: p.pin ?? null, aliases: p.aliases || {}, excluded: p.excluded || [], roleplay: normalizeRoleplay(p.roleplay) };
+  const cfgPrev = { pin: p.pin ?? null, aliases: p.aliases || {}, excluded: p.excluded || [], notifications: p.notifications || {}, roleplay: normalizeRoleplay(p.roleplay) };
   if (JSON.stringify(cfgNext) !== JSON.stringify(cfgPrev)) {
     jobs.push(sbFetch("config?id=eq.main", {
       method: "PATCH",
@@ -563,6 +671,7 @@ async function saveData(next, prev) {
         headers: { Prefer: "resolution=merge-duplicates,return=minimal" },
         body: JSON.stringify({
           id: u.id, name: u.name, email: u.email || null, pass_hash: u.passHash,
+          role_access: Array.isArray(u.roleAccess) ? u.roleAccess : null,
           birthdate: u.birthdate || null, retreat_date: u.retreatDate || null,
           expectations: u.expectations || null, linked_canon: u.linkedCanon || null,
         }),
@@ -589,6 +698,7 @@ function mergeUserProfile(target, source) {
   return {
     ...target,
     email: target.email || source.email || "",
+    roleAccess: Array.isArray(target.roleAccess) ? target.roleAccess : source.roleAccess,
     birthdate: target.birthdate || source.birthdate || "",
     retreatDate: target.retreatDate || source.retreatDate || "",
     expectations: target.expectations || source.expectations || "",
@@ -691,6 +801,7 @@ function buildMergedAccountData(data, sourceId, targetId) {
     progress: mergeProgressForAccounts(data.progress || [], source.id, target.id),
     attendance: mergeAttendanceForAccounts(data.attendance || [], source.id, target.id),
     questions: (data.questions || []).map((q) => (q.userId === source.id ? { ...q, userId: target.id, userName: target.name } : q)),
+    gameAlerts: (data.gameAlerts || []).map((a) => (a.userId === source.id ? { ...a, id: `${target.id}_${a.resourceId}`, userId: target.id, userName: target.name } : a)),
     roleplayEvents: (data.roleplayEvents || []).map((e) => (e.userId === source.id ? { ...e, userId: target.id, userName: target.name } : e)),
     roleplaySessions: mergedSessions,
   };
@@ -761,11 +872,13 @@ const emptyData = () => ({
   aliases: {},
   exercises: [],
   excluded: [],
+  notifications: {},
   route: emptyRoute(),
   users: [],
   progress: [],
   attendance: [],
   questions: [],
+  gameAlerts: [],
   roleplay: emptyRoleplay(),
   roleplaySessions: [],
   roleplayEvents: [],
@@ -1478,6 +1591,12 @@ function gameRequirementStatus(resource, data, user) {
   const percent = pct(best.correct, best.total);
   return { linked: true, required: true, passed: percent >= passing, percent, passing, played: true, title: ex?.title || resource.label || "Juego" };
 }
+function pendingGameAlerts(data) {
+  return (data?.gameAlerts || []).filter((a) => a.status !== "resolved");
+}
+function pendingGameAlertFor(data, userId, resourceId) {
+  return pendingGameAlerts(data).find((a) => a.userId === userId && a.resourceId === resourceId) || null;
+}
 function blockLearningStatus(data, user, block) {
   const row = progressForBlock(data.progress || [], user?.id, block?.id);
   const attended = attendedBlock(data, block, user);
@@ -2077,6 +2196,19 @@ function UsersAdmin({ data, persist, busy }) {
     const next = { ...data, users: users.map((u) => (u.id === userId ? { ...u, linkedCanon: canon } : u)) };
     try { await persist(next); } catch {}
   };
+  const setRoleAccess = async (userId, roleKey, checked) => {
+    const user = users.find((u) => u.id === userId);
+    const current = new Set(roleAccessFor(user));
+    if (checked) current.add(roleKey);
+    else current.delete(roleKey);
+    const nextAccess = ALL_ROLE_KEYS.filter((key) => current.has(key));
+    const next = { ...data, users: users.map((u) => (u.id === userId ? { ...u, roleAccess: nextAccess } : u)) };
+    try { await persist(next); } catch {}
+  };
+  const resetRoleAccess = async (userId) => {
+    const next = { ...data, users: users.map((u) => (u.id === userId ? { ...u, roleAccess: null } : u)) };
+    try { await persist(next); } catch {}
+  };
   const delUser = async (userId) => {
     setUserMsg(null);
     try {
@@ -2168,12 +2300,33 @@ function UsersAdmin({ data, persist, busy }) {
               <div className="user-card-body">
                 <div className="user-fields">
                   <div className="ufield"><span className="uf-l">Correo</span><span className="uf-v">{u.email || "Pendiente"}</span></div>
+                  <div className="ufield"><span className="uf-l">Roles visibles</span><span className="uf-v">{roleAccessFor(u).length || 0}/{ROLEPLAY_ROLES.length}</span></div>
                   <div className="ufield"><span className="uf-l">🎂 Nacimiento</span><span className="uf-v">{fmtDate(u.birthdate)}{ageFromBirth(u.birthdate) != null ? ` · ${ageFromBirth(u.birthdate)} años` : ""}</span></div>
                   <div className="ufield"><span className="uf-l">⛪ Vivió su EJE</span><span className="uf-v">{u.retreatDate || "—"}</span></div>
                 </div>
                 {u.expectations && (
                   <div className="user-expect"><span className="uf-l">💭 Expectativas</span><div className="pf-quote">"{u.expectations}"</div></div>
                 )}
+
+                <div className="admin-role-access">
+                  <div className="role-access-head">
+                    <label className="lbl">Roles que puede ver</label>
+                    <button className="btn btn--ghost btn--sm" onClick={() => resetRoleAccess(u.id)} disabled={busy}>Permitir todos</button>
+                  </div>
+                  <div className="role-access-grid">
+                    {ROLEPLAY_ROLES.map((role) => (
+                      <label key={role.key} className={`role-access-check ${canSeeRole(u, role.key) ? "role-access-check--on" : ""}`}>
+                        <input
+                          type="checkbox"
+                          checked={canSeeRole(u, role.key)}
+                          onChange={(e) => setRoleAccess(u.id, role.key, e.target.checked)}
+                          disabled={busy}
+                        />
+                        <span>{role.label}</span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
 
                 <label className="lbl" style={{ marginTop: 12 }}>Vincular con nombre del podio</label>
                 <div className="link-row">
@@ -2303,6 +2456,7 @@ function AdminDashboard({ data }) {
   const completeProfiles = rows.filter((r) => r.profileComplete).length;
   const linked = rows.filter((r) => r.user.linkedCanon).length;
   const withResults = rows.filter((r) => r.stats?.played > 0).length;
+  const pendingPlayedAlerts = pendingGameAlerts(data).length;
   const avgRoute = registered ? Math.round(rows.reduce((s, r) => s + r.route.percent, 0) / registered) : 0;
   const resultTotals = rows.reduce((acc, r) => {
     if (r.stats?.total) {
@@ -2450,6 +2604,7 @@ function AdminDashboard({ data }) {
         <div className="card dash-kpi"><span>{pct(linked, registered)}%</span><b>Vinculados</b><small>{linked}/{registered} al podio</small></div>
         <div className="card dash-kpi"><span>{avgRoute}%</span><b>Avance ruta</b><small>Promedio general</small></div>
         <div className="card dash-kpi"><span>{withResults}</span><b>Con resultados</b><small>Participaron en juegos</small></div>
+        <div className="card dash-kpi"><span>{pendingPlayedAlerts}</span><b>Avisos juegos</b><small>Pendientes de actualizar</small></div>
         <div className="card dash-kpi"><span>{avgAccuracy}%</span><b>Aciertos</b><small>Promedio acumulado</small></div>
       </div>
 
@@ -3251,6 +3406,106 @@ function QuestionsAdmin({ data, busy, onUpdate }) {
   );
 }
 
+function GameAlertsAdmin({ data, busy, onResolve, onSaveAlertEmail }) {
+  const [filter, setFilter] = useState("pending");
+  const [query, setQuery] = useState("");
+  const [email, setEmail] = useState(data.notifications?.gameAlertEmail || "");
+  const alerts = data.gameAlerts || [];
+  const pending = pendingGameAlerts(data);
+  useEffect(() => {
+    setEmail(data.notifications?.gameAlertEmail || "");
+  }, [data.notifications?.gameAlertEmail]);
+  const filtered = useMemo(() => {
+    const qn = norm(query);
+    return alerts.filter((a) => {
+      if (filter === "pending" && a.status === "resolved") return false;
+      if (filter === "resolved" && a.status !== "resolved") return false;
+      if (!qn) return true;
+      return norm(`${a.userName} ${a.blockTitle} ${a.resourceLabel}`).includes(qn);
+    });
+  }, [alerts, filter, query]);
+
+  const exerciseName = (id) => (data.exercises || []).find((e) => e.id === id)?.title || "Sin ejercicio vinculado";
+  const copyPending = () => {
+    const lines = pending.map((a) =>
+      `${a.userName || "Participante"} avisó que jugó "${a.resourceLabel || "Juego Wordwall"}" (${a.blockTitle || "Bloque sin nombre"}).`
+    );
+    copyText(lines.join("\n"), `${lines.length} aviso(s) copiado(s).`);
+  };
+
+  return (
+    <div className="questions-admin">
+      <div className="card attendance-hero">
+        <div>
+          <div className="dash-eyebrow">Actualización de Wordwall</div>
+          <div className="dash-title">Avisos de juegos</div>
+          <div className="dim">Cuando un participante avisa que ya jugó, aparece aquí para que actualices el podio con Excel o pegado rápido.</div>
+        </div>
+        <button className="btn btn--gold btn--sm" onClick={copyPending} disabled={!pending.length}>Copiar pendientes</button>
+      </div>
+
+      <div className="card attendance-tools questions-tools">
+        <label className="filter-group">
+          <span>Correo que recibe avisos</span>
+          <input className="inp" type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="Si queda vacío usa ADMIN_NOTIFY_EMAIL de Vercel" />
+        </label>
+        <div className="filter-group">
+          <span>Guardar correo</span>
+          <button className="btn btn--teal-o btn--sm" onClick={() => onSaveAlertEmail(email)} disabled={busy}>Guardar correo</button>
+        </div>
+        <label className="filter-group">
+          <span>Estado</span>
+          <select className="inp" value={filter} onChange={(e) => setFilter(e.target.value)}>
+            <option value="pending">Pendientes ({pending.length})</option>
+            <option value="resolved">Resueltos ({alerts.length - pending.length})</option>
+            <option value="all">Todos ({alerts.length})</option>
+          </select>
+        </label>
+        <label className="filter-group">
+          <span>Buscar</span>
+          <input className="inp" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Participante, bloque o juego" />
+        </label>
+      </div>
+
+      <div className="questions-list">
+        {filtered.length === 0 ? (
+          <div className="empty empty--compact">No hay avisos con ese filtro.</div>
+        ) : (
+          filtered.map((a) => (
+            <div key={a.id} className={`card game-admin-row ${a.status === "resolved" ? "game-admin-row--done" : ""}`}>
+              <div className="question-admin-top">
+                <span className="cell-person">
+                  <span className="avatar avatar--xs">{initials(a.userName || "?")}</span>
+                  <span className="cell-main">
+                    <b>{a.userName || "Participante"}</b>
+                    <small>{a.playedAt ? new Date(a.playedAt).toLocaleString("es-PE") : "Sin fecha"}</small>
+                  </span>
+                </span>
+                <span className={`status-pill ${a.status === "resolved" ? "status-pill--ok" : "status-pill--warn"}`}>
+                  {a.status === "resolved" ? "Actualizado" : "Pendiente"}
+                </span>
+              </div>
+              <div className="game-alert-detail">
+                <span><b>Bloque:</b> {a.blockTitle || "Sin bloque"}</span>
+                <span><b>Juego:</b> {a.resourceLabel || "Juego Wordwall"}</span>
+                <span><b>Ejercicio podio:</b> {exerciseName(a.exerciseId)}</span>
+              </div>
+              <div className="row-actions">
+                {a.exerciseId && <button className="btn btn--ghost btn--sm" onClick={() => copyText(exerciseName(a.exerciseId), "Nombre del ejercicio copiado.")}>Copiar ejercicio</button>}
+                {a.status !== "resolved" && (
+                  <button className="btn btn--teal-o btn--sm" onClick={() => onResolve(a.id)} disabled={busy}>
+                    Marcar como actualizado
+                  </button>
+                )}
+              </div>
+            </div>
+          ))
+        )}
+      </div>
+    </div>
+  );
+}
+
 function RoleplayAdmin({ data, persist, busy }) {
   const [local, setLocal] = useState(() => normalizeRoleplay(data.roleplay));
   const [dirty, setDirty] = useState(false);
@@ -3781,6 +4036,41 @@ function AdminPanel({ data, setData, onExit }) {
     } catch {}
   };
 
+  const pendingGameAlertCount = pendingGameAlerts(data).length;
+  const resolveGameAlert = async (alertId) => {
+    setBusy(true);
+    setMsg(null);
+    try {
+      const saved = await updateGamePlayedAlert(alertId, "resolved");
+      setData((prev) => ({
+        ...prev,
+        gameAlerts: (prev.gameAlerts || []).map((a) => (a.id === alertId ? saved : a)),
+      }));
+      setMsg({ ok: true, t: "Aviso marcado como actualizado." });
+    } catch (e) {
+      setMsg({ ok: false, t: "No se pudo actualizar el aviso. Revisa que la tabla game_play_alerts exista en Supabase." });
+    } finally {
+      setBusy(false);
+    }
+  };
+  const saveAlertEmail = async (email) => {
+    const clean = normEmail(email || "");
+    if (clean && !isValidEmail(clean)) {
+      setMsg({ ok: false, t: "Escribe un correo válido para recibir avisos." });
+      return;
+    }
+    try {
+      await persist({
+        ...data,
+        notifications: {
+          ...(data.notifications || {}),
+          gameAlertEmail: clean,
+        },
+      });
+      setMsg({ ok: true, t: clean ? "Correo de avisos guardado." : "Se usará el correo ADMIN_NOTIFY_EMAIL configurado en Vercel." });
+    } catch {}
+  };
+
   const editingEx = data.exercises.find((e) => e.id === editing);
   const exercisesWithResultLinks = useMemo(
     () => (data.exercises || []).filter((ex) => String(ex.resultsUrl || "").trim()),
@@ -3844,7 +4134,7 @@ function AdminPanel({ data, setData, onExit }) {
 
       <div className="tabs">
         <button className={`tab ${tab === "roles" ? "tab--on" : ""}`} onClick={() => setTab("roles")}>Juego de roles</button>
-        {[["dashboard", "📊 Dashboard"], ["ruta", "🏟️ Ruta Formativa"], ["asistencia", "✅ Asistencia"], ["preguntas", `💬 Preguntas (${(data.questions || []).filter((q) => q.status !== "archived").length})`], ["subir", "⬆ Subir resultados"], ["ejercicios", `📋 Ejercicios (${data.exercises.length})`], ["usuarios", `👥 Usuarios (${(data.users || []).length})`], ["participantes", "🏃 Participantes"], ["alias", "👤 Nombres y alias"], ["pin", "🔒 PIN"]].map(([k, t]) => (
+        {[["dashboard", "📊 Dashboard"], ["ruta", "🏟️ Ruta Formativa"], ["asistencia", "✅ Asistencia"], ["juegos_alertas", `🎮 Avisos juegos (${pendingGameAlertCount})`], ["preguntas", `💬 Preguntas (${(data.questions || []).filter((q) => q.status !== "archived").length})`], ["subir", "⬆ Subir resultados"], ["ejercicios", `📋 Ejercicios (${data.exercises.length})`], ["usuarios", `👥 Usuarios (${(data.users || []).length})`], ["participantes", "🏃 Participantes"], ["alias", "👤 Nombres y alias"], ["pin", "🔒 PIN"]].map(([k, t]) => (
           <button key={k} className={`tab ${tab === k ? "tab--on" : ""}`} onClick={() => setTab(k)}>{t}</button>
         ))}
       </div>
@@ -3858,6 +4148,8 @@ function AdminPanel({ data, setData, onExit }) {
       {tab === "roles" && <RoleplayAdmin data={data} persist={persist} busy={busy} />}
 
       {tab === "asistencia" && <AttendanceAdmin data={data} busy={busy} onSave={saveAttendanceBlock} />}
+
+      {tab === "juegos_alertas" && <GameAlertsAdmin data={data} busy={busy} onResolve={resolveGameAlert} onSaveAlertEmail={saveAlertEmail} />}
 
       {tab === "preguntas" && <QuestionsAdmin data={data} busy={busy} onUpdate={saveQuestionUpdate} />}
 
@@ -4218,7 +4510,7 @@ function ResourceButton({ r, onOpen }) {
   );
 }
 
-function RouteField({ data, muted, sessionUser, onToggleBlockProgress, onOpenBlock, onAudioProgress, progressBusy }) {
+function RouteField({ data, muted, sessionUser, onToggleBlockProgress, onOpenBlock, onAudioProgress, onReportGamePlayed, progressBusy, gameAlertBusy }) {
   const [viewer, setViewer] = useState(null); // {type,url,label}
   const [openBlock, setOpenBlock] = useState(null);
   const route = data.route || emptyRoute();
@@ -4301,9 +4593,13 @@ function RouteField({ data, muted, sessionUser, onToggleBlockProgress, onOpenBlo
         <BlockModal
           block={openBlock}
           status={blockLearningStatus(data, sessionUser, openBlock)}
+          data={data}
+          sessionUser={sessionUser}
           progressBusy={progressBusy}
           onToggleComplete={(completed) => onToggleBlockProgress(openBlock.id, completed)}
           onAudioProgress={(percent, completed) => onAudioProgress(openBlock.id, percent, completed)}
+          onReportGamePlayed={(resource) => onReportGamePlayed?.(openBlock, resource)}
+          gameAlertBusy={gameAlertBusy}
           onClose={() => setOpenBlock(null)}
           onOpenResource={(r) => setViewer(r)}
         />
@@ -4380,7 +4676,7 @@ function BlockAudio({ url, percent, completed, onAudioProgress }) {
   );
 }
 
-function BlockModal({ block, status, progressBusy, onToggleComplete, onAudioProgress, onClose, onOpenResource }) {
+function BlockModal({ block, status, data, sessionUser, progressBusy, gameAlertBusy, onToggleComplete, onAudioProgress, onReportGamePlayed, onClose, onOpenResource }) {
   const games = (block.resources || []).filter((r) => r.type === "game");
   const videos = (block.resources || []).filter((r) => r.type === "video");
   const pptEmbed = toEmbedUrl(block.pptUrl);
@@ -4454,8 +4750,24 @@ function BlockModal({ block, status, progressBusy, onToggleComplete, onAudioProg
           <div className="res-group">
             <div className="res-group-title">🎮 Juegos de Wordwall</div>
             <div className="res-list">
-              {games.map((r) => <ResourceButton key={r.id} r={r} onOpen={onOpenResource} />)}
+              {games.map((r) => {
+                const pendingAlert = pendingGameAlertFor(data, sessionUser?.id, r.id);
+                const busy = gameAlertBusy === r.id;
+                return (
+                  <div key={r.id} className={`game-alert-row ${pendingAlert ? "game-alert-row--sent" : ""}`}>
+                    <ResourceButton r={r} onOpen={onOpenResource} />
+                    <button
+                      className={pendingAlert ? "btn btn--ghost btn--sm" : "btn btn--teal-o btn--sm"}
+                      onClick={() => onReportGamePlayed?.(r)}
+                      disabled={busy || !!pendingAlert}
+                    >
+                      {busy ? "Enviando..." : pendingAlert ? "Aviso enviado" : "Avisar 80%+ logrado"}
+                    </button>
+                  </div>
+                );
+              })}
             </div>
+            <div className="game-alert-help">Úsalo solo si ya jugaste y obtuviste mínimo 80%. Este aviso le indica a administración que debe actualizar los resultados de Wordwall.</div>
           </div>
         )}
         {videos.length > 0 && (
@@ -4588,6 +4900,7 @@ function RoleAudioPlayer({ resource, roleKey, onUse }) {
 function RoleplayHub({ data, setData, sessionUser }) {
   const roleplay = useMemo(() => normalizeRoleplay(data.roleplay), [data.roleplay]);
   const [selectedRole, setSelectedRole] = useState(() => readStore(STORE.roleplayRole, "asesor"));
+  const visibleRoles = useMemo(() => ROLEPLAY_ROLES.filter((role) => canSeeRole(sessionUser, role.key)), [sessionUser]);
   const [joinCode, setJoinCode] = useState("");
   const [activeSessionId, setActiveSessionId] = useState(() => readStore(STORE.roleplaySession, ""));
   const [busy, setBusy] = useState(false);
@@ -4604,6 +4917,10 @@ function RoleplayHub({ data, setData, sessionUser }) {
     if (!activeSessionId && activePracticeSessions[0]) setActiveSessionId(activePracticeSessions[0].id);
     if (activeSessionId && !activePracticeSessions.some((s) => s.id === activeSessionId)) setActiveSessionId(activePracticeSessions[0]?.id || "");
   }, [activePracticeSessions, activeSessionId]);
+  useEffect(() => {
+    if (!visibleRoles.length) return;
+    if (!visibleRoles.some((role) => role.key === selectedRole)) setSelectedRole(visibleRoles[0].key);
+  }, [visibleRoles, selectedRole]);
   useEffect(() => { writeStore(STORE.roleplayRole, selectedRole); }, [selectedRole]);
   useEffect(() => { writeStore(STORE.roleplaySession, activeSessionId); }, [activeSessionId]);
   useEffect(() => { writeStoreJson(STORE.roleplayHidden, hiddenSessionIds); }, [hiddenSessionIds]);
@@ -4629,6 +4946,10 @@ function RoleplayHub({ data, setData, sessionUser }) {
     );
   };
   const createSession = async () => {
+    if (!canSeeRole(sessionUser, "asesor")) {
+      setMsg("Tu usuario no tiene habilitado el rol Asesor.");
+      return;
+    }
     setBusy(true);
     setMsg("");
     try {
@@ -4767,15 +5088,17 @@ function RoleplayHub({ data, setData, sessionUser }) {
           <div className="dash-title">Juego de roles</div>
           <div className="dim">Elige tu rol para practicar con sesiones, juegos o materiales asignados por el equipo.</div>
         </div>
-        <div className="join-box">
-          <input className="inp inp--sm" value={joinCode} onChange={(e) => setJoinCode(e.target.value.toUpperCase())} onKeyDown={(e) => e.key === "Enter" && joinSession()} placeholder="Código de sesión" />
-          <button className="btn btn--teal-o btn--sm" onClick={joinSession} disabled={busy || !joinCode.trim()}>Unirme</button>
-        </div>
+        {canSeeRole(sessionUser, "asesor") && (
+          <div className="join-box">
+            <input className="inp inp--sm" value={joinCode} onChange={(e) => setJoinCode(e.target.value.toUpperCase())} onKeyDown={(e) => e.key === "Enter" && joinSession()} placeholder="Código de sesión" />
+            <button className="btn btn--teal-o btn--sm" onClick={joinSession} disabled={busy || !joinCode.trim()}>Unirme</button>
+          </div>
+        )}
       </div>
       {msg && <div className="toast toast--ok">{msg}</div>}
 
       <div className="role-selector">
-        {ROLEPLAY_ROLES.map((role) => (
+        {visibleRoles.map((role) => (
           <button key={role.key} className={`role-select-card ${selectedRole === role.key ? "role-select-card--on" : ""}`} onClick={() => setSelectedRole(role.key)}>
             <b>{role.label}</b>
             <span>{role.hint}</span>
@@ -4783,7 +5106,11 @@ function RoleplayHub({ data, setData, sessionUser }) {
         ))}
       </div>
 
-      {selectedRole === "asesor" ? (
+      {!visibleRoles.length && (
+        <div className="empty" style={{ padding: "50px 20px" }}>Aún no tienes roles habilitados. Pide al administrador que active los roles que debes ver.</div>
+      )}
+
+      {visibleRoles.length > 0 && selectedRole === "asesor" ? (
         <div className="roleplay-grid">
           <div className="card role-session-panel">
             <div className="dash-panel-head">
@@ -4848,7 +5175,7 @@ function RoleplayHub({ data, setData, sessionUser }) {
             </div>
           </div>
         </div>
-      ) : (
+      ) : visibleRoles.length > 0 ? (
         <div className="card role-resource-panel">
           <div className="dash-panel-head">
             <div>
@@ -4872,7 +5199,7 @@ function RoleplayHub({ data, setData, sessionUser }) {
           )}
           {renderResources(selectedRole)}
         </div>
-      )}
+      ) : null}
     </div>
   );
 }
@@ -4957,6 +5284,7 @@ function AuthScreen({ data, setData, onLogin }) {
       name: rName.trim(),
       email: normEmail(rEmail),
       passHash: lightHash(rPass),
+      roleAccess: null,
       birthdate: rBirth || "",
       retreatDate: rRetreat.trim(),
       expectations: rExpect.trim(),
@@ -5061,6 +5389,9 @@ function AuthScreen({ data, setData, onLogin }) {
                 <label className="lbl">Fecha de nacimiento</label>
                 <input className="inp" type="date" value={rBirth} onChange={(e) => setRBirth(e.target.value)} />
               </div>
+            </div>
+
+            <div className="auth-grid">
               <div>
                 <label className="lbl">¿Cuándo viviste tu retiro EJE? *</label>
                 <input className="inp" value={rRetreat} onChange={(e) => setRRetreat(e.target.value)} placeholder="Ej. Noviembre 2023" />
@@ -5158,13 +5489,13 @@ function ProfileCard({ user, data, onClose, onLogout }) {
   );
 }
 
-function EmailUpdateModal({ user, data, setData, onLogout }) {
+function ProfileUpdateModal({ user, data, setData, onLogout }) {
   const [email, setEmail] = useState(user.email || "");
   const [err, setErr] = useState(null);
   const [busy, setBusy] = useState(false);
   const users = data.users || [];
 
-  const saveEmail = async () => {
+  const saveProfile = async () => {
     setErr(null);
     const clean = normEmail(email);
     if (!isValidEmail(clean)) { setErr("Escribe un correo válido."); return; }
@@ -5178,7 +5509,7 @@ function EmailUpdateModal({ user, data, setData, onLogout }) {
       await saveData(next, data);
       setData(next);
     } catch {
-      setErr("No se pudo guardar el correo. Inténtalo otra vez.");
+      setErr("No se pudieron guardar tus datos. Inténtalo otra vez.");
     } finally {
       setBusy(false);
     }
@@ -5190,14 +5521,14 @@ function EmailUpdateModal({ user, data, setData, onLogout }) {
         <div className="modal-head">
           <div>
             <div className="modal-title">Actualiza tu correo</div>
-            <div className="dim" style={{ fontSize: 13 }}>Lo usaremos para recuperar tu clave y dar seguimiento a tu preparación.</div>
+            <div className="dim" style={{ fontSize: 13 }}>Lo usaremos para recuperar tu clave y dar seguimiento.</div>
           </div>
         </div>
         <label className="lbl">Correo</label>
-        <input className="inp" type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="tu.correo@email.com" onKeyDown={(e) => e.key === "Enter" && saveEmail()} />
+        <input className="inp" type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="tu.correo@email.com" onKeyDown={(e) => e.key === "Enter" && saveProfile()} />
         {err && <div className="auth-err">{err}</div>}
         <div className="email-update-actions">
-          <button className="btn btn--gold" onClick={saveEmail} disabled={busy}>Guardar correo</button>
+          <button className="btn btn--gold" onClick={saveProfile} disabled={busy}>Guardar correo</button>
           <button className="btn btn--ghost btn--sm" onClick={onLogout} disabled={busy}>Cerrar sesión</button>
         </div>
       </div>
@@ -5222,9 +5553,10 @@ export default function App() {
   const [showProfile, setShowProfile] = useState(false);
   const [showQuestionBox, setShowQuestionBox] = useState(false);
   const [progressBusy, setProgressBusy] = useState(false);
+  const [gameAlertBusy, setGameAlertBusy] = useState("");
 
   const sessionUser = data?.users?.find((u) => u.id === sessionUserId) || null;
-  const needsEmailUpdate = !!(sessionUser && !isValidEmail(sessionUser.email));
+  const needsProfileUpdate = !!(sessionUser && !isValidEmail(sessionUser.email));
 
   useEffect(() => {
     (async () => {
@@ -5342,6 +5674,26 @@ export default function App() {
     }
   }, [sessionUserId, mergeProgressRow]);
 
+  const handleReportGamePlayed = useCallback(async (block, resource) => {
+    if (!sessionUser || !resource?.id) return;
+    setGameAlertBusy(resource.id);
+    try {
+      const saved = await recordGamePlayedAlert(sessionUser, block, resource);
+      const exerciseTitle = (data?.exercises || []).find((ex) => ex.id === resource.exerciseId)?.title || "";
+      sendGameAlertEmail(saved, sessionUser, block, resource, exerciseTitle, data?.notifications?.gameAlertEmail || "");
+      setData((prev) => {
+        if (!prev) return prev;
+        const rest = (prev.gameAlerts || []).filter((a) => a.id !== saved.id);
+        return { ...prev, gameAlerts: [saved, ...rest] };
+      });
+    } catch (e) {
+      console.error("recordGamePlayedAlert:", e);
+      window.alert("No se pudo enviar el aviso. Revisa que la tabla game_play_alerts exista en Supabase.");
+    } finally {
+      setGameAlertBusy("");
+    }
+  }, [sessionUser, data?.exercises, data?.notifications?.gameAlertEmail]);
+
   const handleSubmitQuestion = useCallback(async (question) => {
     if (!sessionUser) return;
     const saved = await submitQuestion(sessionUser, question);
@@ -5451,6 +5803,8 @@ export default function App() {
               onToggleBlockProgress={handleToggleBlockProgress}
               onOpenBlock={handleOpenBlock}
               onAudioProgress={handleAudioProgress}
+              onReportGamePlayed={handleReportGamePlayed}
+              gameAlertBusy={gameAlertBusy}
             />
           )}
 
@@ -5531,8 +5885,8 @@ export default function App() {
           onClose={() => setShowQuestionBox(false)}
         />
       )}
-      {needsEmailUpdate && (
-        <EmailUpdateModal
+      {needsProfileUpdate && (
+        <ProfileUpdateModal
           user={sessionUser}
           data={data}
           setData={setData}
@@ -6111,6 +6465,12 @@ button:focus-visible,.inp:focus-visible{outline:2px solid var(--turf);outline-of
 .admin-reset-box{margin-top:12px;background:var(--bg0);border:1px solid var(--line);border-radius:11px;padding:12px;display:grid;gap:9px}
 .admin-reset-actions{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
 .admin-reset-actions .inp{max-width:260px}
+.admin-role-access{margin-top:12px;background:var(--bg0);border:1px solid var(--line);border-radius:11px;padding:12px;display:grid;gap:10px}
+.role-access-head{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}
+.role-access-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px}
+.role-access-check{display:flex;align-items:center;gap:8px;border:1px solid var(--line);border-radius:10px;padding:9px 10px;color:var(--dim);font-weight:800;font-size:13px}
+.role-access-check--on{border-color:#16DB9366;background:#16DB930f;color:var(--text)}
+.role-access-check input{accent-color:var(--turf)}
 
 /* ---------- Dashboard admin ---------- */
 .admin-dash{display:grid;gap:16px}
@@ -6293,6 +6653,14 @@ button:focus-visible,.inp:focus-visible{outline:2px solid var(--turf);outline-of
 .res-group-title{font-family:var(--mono);font-size:11px;font-weight:700;letter-spacing:1.5px;color:var(--dim);
   text-transform:uppercase;margin-bottom:9px}
 .res-list{display:flex;flex-wrap:wrap;gap:10px}
+.game-alert-row{display:flex;align-items:center;gap:8px;flex-wrap:wrap;background:var(--bg0);border:1px solid var(--line);border-radius:12px;padding:8px}
+.game-alert-row--sent{border-color:#16DB9344;background:#16DB930d}
+.game-alert-help{margin-top:8px;color:var(--dim);font-size:12px;line-height:1.4}
+.game-admin-row{display:grid;gap:10px}
+.game-admin-row--done{opacity:.72}
+.game-alert-detail{display:grid;gap:6px;background:var(--bg0);border:1px solid var(--line);border-radius:10px;padding:10px 12px;font-size:13px}
+.game-alert-detail span{color:var(--dim)}
+.game-alert-detail b{color:var(--text)}
 .res-btn{display:flex;align-items:center;gap:10px;padding:11px 15px;border-radius:12px;cursor:pointer;
   border:1px solid var(--line2);background:linear-gradient(180deg,var(--card2),var(--card));transition:var(--tr);
   font-family:var(--body);color:var(--text);text-align:left;text-decoration:none}
